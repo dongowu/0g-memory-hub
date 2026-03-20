@@ -1,6 +1,8 @@
 package core
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -128,6 +130,10 @@ func (s *Session) AddMessage(role, content string) *Message {
 		Content:   content,
 		Timestamp: time.Now().Unix(),
 	}
+
+	// 计算消息哈希
+	hash := sha256.Sum256([]byte(content))
+	msg.Hash = hex.EncodeToString(hash[:])
 
 	s.Context = append(s.Context, msg)
 	s.UpdatedAt = time.Now().Unix()

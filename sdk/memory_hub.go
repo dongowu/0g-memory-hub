@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/dongowu/0g-memory-hub/chain"
@@ -16,6 +17,23 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus"
 )
+
+// isValidEthAddress validates that an address is a proper Ethereum address
+func isValidEthAddress(addr string) bool {
+	if addr == "" {
+		return false
+	}
+	addr = strings.ToLower(addr)
+	if !strings.HasPrefix(addr, "0x") {
+		return false
+	}
+	hexPart := addr[2:]
+	if len(hexPart) != 40 {
+		return false
+	}
+	_, err := hex.DecodeString(hexPart)
+	return err == nil
+}
 
 // MemoryHub SDK 核心接口
 type MemoryHub struct {
@@ -105,11 +123,17 @@ func (m *MemoryHub) Close() error {
 
 // GetOrCreateSession 获取或创建会话
 func (m *MemoryHub) GetOrCreateSession(wallet string) *core.Session {
+	if wallet == "" || !isValidEthAddress(wallet) {
+		return nil
+	}
 	return m.sessions.GetOrCreate(wallet)
 }
 
 // GetSession 获取会话
 func (m *MemoryHub) GetSession(wallet string) *core.Session {
+	if wallet == "" || !isValidEthAddress(wallet) {
+		return nil
+	}
 	return m.sessions.Get(wallet)
 }
 
@@ -236,6 +260,14 @@ func (m *MemoryHub) AnchorToChain(ctx context.Context, session *core.Session) (*
 		return nil, fmt.Errorf("private key not configured")
 	}
 
+	if session.Wallet == "" {
+		return nil, fmt.Errorf("wallet address is empty")
+	}
+
+	if !isValidEthAddress(session.Wallet) {
+		return nil, fmt.Errorf("invalid wallet address: must be a valid Ethereum address (0x followed by 40 hex characters)")
+	}
+
 	m.logger.WithField("wallet", session.Wallet).Info("Anchoring to chain")
 
 	// 转换钱包地址
@@ -253,6 +285,14 @@ func (m *MemoryHub) AnchorToChain(ctx context.Context, session *core.Session) (*
 
 // GetChainHead 从链上获取最新 CID
 func (m *MemoryHub) GetChainHead(ctx context.Context, wallet string) (string, error) {
+	if wallet == "" {
+		return "", fmt.Errorf("wallet address is empty")
+	}
+
+	if !isValidEthAddress(wallet) {
+		return "", fmt.Errorf("invalid wallet address: must be a valid Ethereum address (0x followed by 40 hex characters)")
+	}
+
 	walletAddr := common.HexToAddress(wallet)
 	return m.chain.GetMemoryHead(ctx, walletAddr)
 }
@@ -266,6 +306,9 @@ func (m *MemoryHub) ExportSession(session *core.Session) ([]byte, error) {
 
 // ImportSession 导入会话
 func (m *MemoryHub) ImportSession(wallet string, data []byte) (*core.Session, error) {
+	if wallet == "" || !isValidEthAddress(wallet) {
+		return nil, fmt.Errorf("invalid wallet address: must be a valid Ethereum address (0x followed by 40 hex characters)")
+	}
 	return m.sessions.Import(wallet, data)
 }
 

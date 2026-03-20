@@ -23,6 +23,28 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// JSONRPCRequest JSON-RPC 请求
+type JSONRPCRequest struct {
+	JSONRPC string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+	Params  interface{} `json:"params"`
+	ID      int         `json:"id"`
+}
+
+// JSONRPCResponse JSON-RPC 响应
+type JSONRPCResponse struct {
+	JSONRPC string      `json:"jsonrpc"`
+	Result  interface{} `json:"result"`
+	Error   *RPCError  `json:"error,omitempty"`
+	ID      int         `json:"id"`
+}
+
+// RPCError JSON-RPC 错误
+type RPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
 // Config 存储配置
 type Config struct {
 	RPCURL     string
@@ -44,6 +66,42 @@ func NewClient(config *Config) *Client {
 	}
 }
 
+// doJSONRPCRequest 执行 JSON-RPC 请求
+func (c *Client) doJSONRPCRequest(ctx context.Context, req JSONRPCRequest) (*JSONRPCResponse, error) {
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.rpcURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var rpcResp JSONRPCResponse
+	if err := json.Unmarshal(body, &rpcResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("rpc error: %s", rpcResp.Error.Message)
+	}
+
+	return &rpcResp, nil
+}
+
 // UploadResult 上传结果
 type UploadResult struct {
 	CID    string `json:"cid"`
@@ -62,9 +120,26 @@ func (c *Client) Upload(ctx context.Context, data []byte) (*UploadResult, error)
 	// 生成 CID (格式: 0g_{hash[:16]})
 	cid := fmt.Sprintf("0g_%s", contentHash[:16])
 
-	// 模拟上传（实际需要调用 0G SDK 或 API）
-	// 在生产环境中，这里应该调用 0G Storage SDK
+	// 使用 JSON-RPC 调用 0G Storage (store namespace)
+	rpcReq := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "store_write",
+		Params:  map[string]interface{}{"data": hex.EncodeToString(data)},
+		ID:      1,
+	}
+
+	rpcResp, err := c.doJSONRPCRequest(ctx, rpcReq)
+	if err != nil {
+		return nil, fmt.Errorf("0G Storage RPC call failed: %w", err)
+	}
+
+	// 从响应中提取交易哈希
 	txHash := fmt.Sprintf("0x%s", contentHash[:32])
+	if resultMap, ok := rpcResp.Result.(map[string]interface{}); ok {
+		if tx, ok := resultMap["tx_hash"].(string); ok {
+			txHash = tx
+		}
+	}
 
 	c.logger.WithFields(logrus.Fields{
 		"cid":    cid,
@@ -95,12 +170,42 @@ func (c *Client) UploadFile(ctx context.Context, filePath string) (*UploadResult
 func (c *Client) Download(ctx context.Context, cid string) ([]byte, error) {
 	c.logger.WithField("cid", cid).Info("Downloading from 0G Storage")
 
-	// 模拟下载（实际需要调用 0G SDK 或 API）
-	// 在生产环境中，这里应该调用 0G Storage SDK
-	mockData := []byte(fmt.Sprintf("Mock content for CID: %s", cid))
+	// 从 CID 中提取内容哈希
+	contentHash := cid
+	if len(cid) > 3 && cid[:3] == "0g_" {
+		contentHash = cid[3:]
+	}
+
+	// 使用 JSON-RPC 调用 0G Storage (store namespace)
+	rpcReq := JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "store_read",
+		Params:  map[string]interface{}{"key": contentHash},
+		ID:      1,
+	}
+
+	rpcResp, err := c.doJSONRPCRequest(ctx, rpcReq)
+	if err != nil {
+		return nil, fmt.Errorf("0G Storage RPC call failed: %w", err)
+	}
+
+	// 从响应中提取数据
+	var data []byte
+	if resultMap, ok := rpcResp.Result.(map[string]interface{}); ok {
+		if dataStr, ok := resultMap["data"].(string); ok {
+			data, err = hex.DecodeString(dataStr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode data: %w", err)
+			}
+		}
+	}
+
+	if data == nil {
+		return nil, fmt.Errorf("no data returned from 0G Storage for CID: %s", cid)
+	}
 
 	c.logger.Info("Download successful")
-	return mockData, nil
+	return data, nil
 }
 
 // DownloadFile 下载文件
@@ -140,10 +245,18 @@ type FileInfo struct {
 
 // GetFileInfo 获取文件信息
 func (c *Client) GetFileInfo(ctx context.Context, cid string) (*FileInfo, error) {
-	// 模拟获取文件信息
+	// 优先从 indexer 获取文件信息
+	if c.indexerURL != "" {
+		info, err := c.GetFileInfoFromIndexer(ctx, cid)
+		if err == nil && info != nil {
+			return info, nil
+		}
+	}
+
+	// 如果无法从 indexer 获取，返回本地计算的信息
 	return &FileInfo{
 		CID:       cid,
-		Size:      1024, // mock
+		Size:      0,
 		Timestamp: time.Now().Unix(),
 	}, nil
 }
@@ -194,8 +307,6 @@ func (c *Client) GetFileInfoFromIndexer(ctx context.Context, cid string) (*FileI
 		Timestamp: result.Data.Timestamp,
 	}, nil
 }
-
-// Helper functions
 
 // Helper functions
 

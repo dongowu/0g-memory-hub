@@ -72,7 +72,6 @@ Examples:
 		}
 
 		scanner := bufio.NewScanner(os.Stdin)
-		reader := bufio.NewReader(os.Stdin)
 
 		// 设置信号处理
 		sigChan := make(chan os.Signal, 1)
@@ -132,9 +131,6 @@ Examples:
 
 		// 保存会话
 		saveAndExit(ctx, session)
-
-		// 刷新 reader
-		_ = reader
 
 		return nil
 	},
@@ -229,7 +225,7 @@ func handleCommand(ctx context.Context, input string, session *core.Session, cmd
 
 	case "/quit", "/exit":
 		saveAndExit(ctx, session)
-		os.Exit(0)
+		return fmt.Errorf("quit signal")
 
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
