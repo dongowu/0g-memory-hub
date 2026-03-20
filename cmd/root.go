@@ -11,6 +11,7 @@ import (
 
 // Config 全局配置
 type Config struct {
+	Wallet         string
 	DataDir        string
 	StorageRPC     string
 	IndexerRPC     string
@@ -45,6 +46,7 @@ For more information, visit: https://docs.0g.ai/`,
 func init() {
 	cobra.OnInitialize(initConfig)
 
+	RootCmd.PersistentFlags().StringVar(&cfg.Wallet, "wallet", "", "Wallet address")
 	RootCmd.PersistentFlags().StringVar(&cfg.DataDir, "data-dir", "./data", "Data directory")
 	RootCmd.PersistentFlags().StringVar(&cfg.StorageRPC, "storage-rpc", "https://testnet-rpc.0g.ai", "0G Storage RPC URL")
 	RootCmd.PersistentFlags().StringVar(&cfg.IndexerRPC, "indexer-rpc", "https://testnet-indexer.0g.ai", "0G Indexer RPC URL")
@@ -73,6 +75,9 @@ func init() {
 	RootCmd.AddCommand(importCmd)
 	RootCmd.AddCommand(infoCmd)
 	RootCmd.AddCommand(verifyCmd)
+	RootCmd.AddCommand(startCmd)
+	RootCmd.AddCommand(chatCmd)
+	RootCmd.AddCommand(taskCmd)
 }
 
 func initConfig() {
