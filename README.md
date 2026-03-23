@@ -157,8 +157,10 @@ Duplicate `eventId` submissions are treated as idempotent retries and will not a
 Current readiness behavior:
 
 - `runtime`: active probe through the Rust stdio runtime client
-- `storage`: configuration-level readiness for upload-capable 0G storage settings
-- `anchor`: configuration-level readiness for chain anchor settings, reported as optional in the current MVP
+- `storage`: lightweight live probe against the configured 0G indexer `/node/status` endpoint, with bounded timeout and turbo indexer fallback for reachability checks
+- `anchor`: optional lightweight live probe against the configured chain RPC using `eth_chainId` and `eth_blockNumber`
+
+This means `/health` can now return `503` not only when a required dependency is missing, but also when it is configured yet currently unreachable.
 
 ### Contract
 

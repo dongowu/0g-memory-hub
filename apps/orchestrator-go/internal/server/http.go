@@ -46,7 +46,30 @@ type openClawBatchIngestRequest struct {
 	Events []openclaw.EventInput `json:"events"`
 }
 
-const healthProbeTimeout = 5 * time.Second
+type openClawBatchIngestItemError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type openClawBatchIngestItemResult struct {
+	WorkflowID   string                        `json:"workflowId,omitempty"`
+	AgentID      string                        `json:"agentId,omitempty"`
+	Status       string                        `json:"status,omitempty"`
+	LatestStep   int64                         `json:"latestStep,omitempty"`
+	LatestRoot   string                        `json:"latestRoot,omitempty"`
+	LatestCID    string                        `json:"latestCid,omitempty"`
+	LatestTxHash string                        `json:"latestTxHash,omitempty"`
+	Success      bool                          `json:"success"`
+	Error        *openClawBatchIngestItemError `json:"error,omitempty"`
+}
+
+const (
+	healthProbeTimeout              = 5 * time.Second
+	openClawIngestMaxBodyBytes      = 1 << 20 // 1 MiB
+	openClawBatchIngestMaxBodyBytes = 4 << 20 // 4 MiB
+)
+
+var errPayloadTooLarge = errors.New("payload too large")
 
 func NewHandler(svc *workflow.Service) http.Handler {
 	h := &Handler{
@@ -85,7 +108,11 @@ func (h *Handler) handleOpenClawIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var in openclaw.EventInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := decodeLimitedJSONBody(w, r, openClawIngestMaxBodyBytes, &in); err != nil {
+		if errors.Is(err, errPayloadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "request body too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid json body")
 		return
 	}
@@ -105,7 +132,11 @@ func (h *Handler) handleOpenClawBatchIngest(w http.ResponseWriter, r *http.Reque
 	}
 
 	var in openClawBatchIngestRequest
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := decodeLimitedJSONBody(w, r, openClawBatchIngestMaxBodyBytes, &in); err != nil {
+		if errors.Is(err, errPayloadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "request body too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid json body")
 		return
 	}
@@ -114,17 +145,45 @@ func (h *Handler) handleOpenClawBatchIngest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	results := make([]workflowResponse, 0, len(in.Events))
+	results := make([]openClawBatchIngestItemResult, 0, len(in.Events))
+	successCount := 0
+	failureCount := 0
 	for _, eventIn := range in.Events {
-		meta, err := h.ingestEvent(r, eventIn)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-			return
+		event := openclaw.NormalizeEvent(eventIn)
+		result := openClawBatchIngestItemResult{
+			WorkflowID: event.WorkflowID,
 		}
-		results = append(results, toWorkflowResponse(meta))
+
+		meta, err := h.svc.Ingest(r.Context(), event)
+		if err != nil {
+			result.Success = false
+			result.Error = &openClawBatchIngestItemError{
+				Code:    "INTERNAL_ERROR",
+				Message: err.Error(),
+			}
+			failureCount++
+			results = append(results, result)
+			continue
+		}
+
+		workflowResult := toWorkflowResponse(meta)
+		result.WorkflowID = workflowResult.WorkflowID
+		result.AgentID = workflowResult.AgentID
+		result.Status = workflowResult.Status
+		result.LatestStep = workflowResult.LatestStep
+		result.LatestRoot = workflowResult.LatestRoot
+		result.LatestCID = workflowResult.LatestCID
+		result.LatestTxHash = workflowResult.LatestTxHash
+		result.Success = true
+		successCount++
+		results = append(results, result)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results":      results,
+		"successCount": successCount,
+		"failureCount": failureCount,
+	})
 }
 
 func (h *Handler) handleWorkflowRoutes(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +208,7 @@ func (h *Handler) handleWorkflowRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "resume" && r.Method == http.MethodPost {
-		meta, err := h.svc.Resume(workflowID)
+		meta, err := h.svc.ResumeWithContext(r.Context(), workflowID)
 		if err != nil {
 			handleWorkflowError(w, err)
 			return
@@ -209,6 +268,18 @@ func handleWorkflowError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+}
+
+func decodeLimitedJSONBody(w http.ResponseWriter, r *http.Request, maxBytes int64, out any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return errPayloadTooLarge
+		}
+		return err
+	}
+	return nil
 }
 
 func (h *Handler) ingestEvent(r *http.Request, in openclaw.EventInput) (types.WorkflowMetadata, error) {

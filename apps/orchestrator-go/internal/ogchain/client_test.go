@@ -183,6 +183,90 @@ func TestMethodSelectorKnownValue(t *testing.T) {
 	}
 }
 
+func TestCheckReadinessLiveProbeSuccess(t *testing.T) {
+	t.Parallel()
+
+	const privateKey = "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae9c645f8af9f4f26"
+	client := NewJSONRPCClient("http://rpc.local", privateKey, "0x0000000000000000000000000000000000000001", "1", &scriptedHTTPClient{
+		t: t,
+		handlers: []rpcHandler{
+			func(req rpcRequest) rpcResponse {
+				if req.Method != "eth_chainId" {
+					t.Fatalf("method = %s, want eth_chainId", req.Method)
+				}
+				return rpcResponse{JSONRPC: "2.0", ID: 1, Result: mustRawJSON(t, "0x1")}
+			},
+			func(req rpcRequest) rpcResponse {
+				if req.Method != "eth_blockNumber" {
+					t.Fatalf("method = %s, want eth_blockNumber", req.Method)
+				}
+				return rpcResponse{JSONRPC: "2.0", ID: 1, Result: mustRawJSON(t, "0x10")}
+			},
+		},
+	})
+
+	if err := client.CheckReadiness(context.Background()); err != nil {
+		t.Fatalf("CheckReadiness() error = %v", err)
+	}
+}
+
+func TestCheckReadinessLiveProbeChainIDMismatch(t *testing.T) {
+	t.Parallel()
+
+	const privateKey = "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae9c645f8af9f4f26"
+	client := NewJSONRPCClient("http://rpc.local", privateKey, "0x0000000000000000000000000000000000000001", "16600", &scriptedHTTPClient{
+		t: t,
+		handlers: []rpcHandler{
+			func(req rpcRequest) rpcResponse {
+				if req.Method != "eth_chainId" {
+					t.Fatalf("method = %s, want eth_chainId", req.Method)
+				}
+				return rpcResponse{JSONRPC: "2.0", ID: 1, Result: mustRawJSON(t, "0x1")}
+			},
+		},
+	})
+
+	err := client.CheckReadiness(context.Background())
+	if err == nil {
+		t.Fatal("CheckReadiness() error = nil, want chain id mismatch")
+	}
+	if !strings.Contains(err.Error(), "chain id mismatch") {
+		t.Fatalf("error = %v, want chain id mismatch", err)
+	}
+}
+
+func TestCheckReadinessLiveProbeRPCError(t *testing.T) {
+	t.Parallel()
+
+	const privateKey = "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae9c645f8af9f4f26"
+	client := NewJSONRPCClient("http://rpc.local", privateKey, "0x0000000000000000000000000000000000000001", "1", &scriptedHTTPClient{
+		t: t,
+		handlers: []rpcHandler{
+			func(req rpcRequest) rpcResponse {
+				if req.Method != "eth_chainId" {
+					t.Fatalf("method = %s, want eth_chainId", req.Method)
+				}
+				return rpcResponse{
+					JSONRPC: "2.0",
+					ID:      1,
+					Error: &rpcError{
+						Code:    -32000,
+						Message: "upstream unavailable",
+					},
+				}
+			},
+		},
+	})
+
+	err := client.CheckReadiness(context.Background())
+	if err == nil {
+		t.Fatal("CheckReadiness() error = nil, want rpc probe error")
+	}
+	if !strings.Contains(err.Error(), "probe chain rpc via eth_chainId") {
+		t.Fatalf("error = %v, want eth_chainId probe context", err)
+	}
+}
+
 type rpcHandler func(req rpcRequest) rpcResponse
 
 type scriptedHTTPClient struct {

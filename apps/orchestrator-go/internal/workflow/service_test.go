@@ -52,6 +52,7 @@ type fakeStorage struct {
 	download    []byte
 	downloadErr error
 	lastKey     string
+	lastCtx     context.Context
 }
 
 func (f *fakeStorage) UploadCheckpoint(_ context.Context, payload []byte) (string, string, error) {
@@ -66,7 +67,8 @@ func (f *fakeStorage) UploadCheckpoint(_ context.Context, payload []byte) (strin
 	return f.key, txHash, nil
 }
 
-func (f *fakeStorage) DownloadCheckpoint(_ context.Context, key string) ([]byte, error) {
+func (f *fakeStorage) DownloadCheckpoint(ctx context.Context, key string) ([]byte, error) {
+	f.lastCtx = ctx
 	f.lastKey = key
 	if f.downloadErr != nil {
 		return nil, f.downloadErr
@@ -91,6 +93,42 @@ func (f *fakeAnchor) AnchorCheckpoint(_ context.Context, in AnchorInput) (string
 		return "0xanchortx", nil
 	}
 	return f.txHash, nil
+}
+
+type blockingRuntime struct {
+	started chan string
+	release chan struct{}
+}
+
+func newBlockingRuntime() *blockingRuntime {
+	return &blockingRuntime{
+		started: make(chan string, 8),
+		release: make(chan struct{}),
+	}
+}
+
+func (b *blockingRuntime) ReplayWorkflow(_ context.Context, workflowID, agentID string, events []RuntimeEvent) (*RuntimeState, error) {
+	b.started <- workflowID
+	<-b.release
+	return &RuntimeState{
+		WorkflowID: workflowID,
+		AgentID:    agentID,
+		Status:     RuntimeStatusRunning,
+		LatestStep: uint64(len(events)),
+		LatestRoot: "root-from-runtime",
+		Events:     append([]RuntimeEvent(nil), events...),
+	}, nil
+}
+
+func (b *blockingRuntime) BuildCheckpoint(_ context.Context, state RuntimeState) (*RuntimeCheckpoint, error) {
+	return &RuntimeCheckpoint{
+		WorkflowID: state.WorkflowID,
+		AgentID:    state.AgentID,
+		LatestStep: state.LatestStep,
+		RootHash:   state.LatestRoot,
+		Status:     state.Status,
+		Events:     append([]RuntimeEvent(nil), state.Events...),
+	}, nil
 }
 
 func TestServiceStartAndStep(t *testing.T) {
@@ -485,5 +523,135 @@ func TestServiceResumeFromCheckpointDownload(t *testing.T) {
 	}
 	if len(resumed.Events) != 2 || resumed.Events[1].EventType != "tool_result" {
 		t.Fatalf("resume did not restore events from checkpoint: %+v", resumed.Events)
+	}
+}
+
+func TestServiceResumeWithContextUsesCallerContext(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	downloadCheckpoint := RuntimeCheckpoint{
+		WorkflowID: "wf-resume-ctx",
+		AgentID:    "agent-wf-resume-ctx",
+		LatestStep: 1,
+		RootHash:   "root-from-download",
+		Status:     RuntimeStatusRunning,
+		Events: []RuntimeEvent{
+			{EventID: "evt-0", StepIndex: 0, EventType: "tool_call", Actor: "planner", Payload: "{}"},
+		},
+	}
+	raw, err := json.Marshal(downloadCheckpoint)
+	if err != nil {
+		t.Fatalf("marshal checkpoint: %v", err)
+	}
+	st := &fakeStorage{download: raw}
+	svc.SetStorage(st)
+
+	if _, err := svc.Start("wf-resume-ctx"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	meta, err := svc.Status("wf-resume-ctx")
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	meta.LatestCID = "cid-from-storage"
+	if err := store.Save(meta); err != nil {
+		t.Fatalf("store.Save() error = %v", err)
+	}
+
+	type ctxKey string
+	ctx := context.WithValue(context.Background(), ctxKey("trace-id"), "trace-123")
+
+	_, err = svc.ResumeWithContext(ctx, "wf-resume-ctx")
+	if err != nil {
+		t.Fatalf("ResumeWithContext() error = %v", err)
+	}
+
+	if st.lastCtx == nil {
+		t.Fatal("download context was not captured")
+	}
+	if got := st.lastCtx.Value(ctxKey("trace-id")); got != "trace-123" {
+		t.Fatalf("download context value = %v, want trace-123", got)
+	}
+}
+
+func TestServiceStepConcurrentDifferentWorkflowsDoNotBlockEachOther(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	rt := newBlockingRuntime()
+	svc.SetRuntime(rt)
+	svc.SetStorage(&fakeStorage{key: "cid-concurrent"})
+
+	if _, err := svc.Start("wf-a"); err != nil {
+		t.Fatalf("Start(wf-a) error = %v", err)
+	}
+	if _, err := svc.Start("wf-b"); err != nil {
+		t.Fatalf("Start(wf-b) error = %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := svc.Step(context.Background(), "wf-a", types.WorkflowStepEvent{
+			EventID:   "evt-a",
+			EventType: "tool_call",
+			Actor:     "planner",
+			Payload:   "{}",
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-rt.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("first workflow did not enter runtime replay in time")
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := svc.Step(context.Background(), "wf-b", types.WorkflowStepEvent{
+			EventID:   "evt-b",
+			EventType: "tool_result",
+			Actor:     "executor",
+			Payload:   "{}",
+		})
+		errCh <- err
+	}()
+
+	secondStarted := false
+	select {
+	case <-rt.started:
+		secondStarted = true
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(rt.release)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("Step() concurrent error = %v", err)
+		}
+	}
+
+	if !secondStarted {
+		t.Fatal("second workflow was blocked by shared service lock")
 	}
 }

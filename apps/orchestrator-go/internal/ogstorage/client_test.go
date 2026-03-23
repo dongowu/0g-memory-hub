@@ -2,7 +2,11 @@ package ogstorage
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/0gfoundation/0g-storage-client/transfer"
@@ -44,10 +48,10 @@ func (s *fakeDownloadSession) Download(_ context.Context, root, outputPath strin
 }
 
 type fakeSessionFactory struct {
-	root       string
-	txHash     string
-	download   []byte
-	uploadErr  error
+	root        string
+	txHash      string
+	download    []byte
+	uploadErr   error
 	downloadErr error
 }
 
@@ -78,6 +82,22 @@ func (e unexpectedPayloadError) Error() string { return "unexpected payload: " +
 type unexpectedKeyError string
 
 func (e unexpectedKeyError) Error() string { return "unexpected key: " + string(e) }
+
+type stubReadinessHTTPClient struct {
+	do func(req *http.Request) (*http.Response, error)
+}
+
+func (c stubReadinessHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	return c.do(req)
+}
+
+func makeHTTPResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}
+}
 
 func TestUploadCheckpoint(t *testing.T) {
 	t.Parallel()
@@ -158,5 +178,88 @@ func TestDefaultUploadOptionUsesOfficialWorkingDefaults(t *testing.T) {
 	}
 	if opt.ExpectedReplica != 1 {
 		t.Fatalf("ExpectedReplica = %d, want 1", opt.ExpectedReplica)
+	}
+}
+
+func TestCheckReadinessLiveProbePrimaryIndexer(t *testing.T) {
+	t.Parallel()
+
+	var requestedPath string
+	client := &SDKClient{
+		config: SDKConfig{
+			IndexerRPCURL:    "https://indexer-storage-testnet-standard.0g.ai",
+			BlockchainRPCURL: "https://evmrpc-testnet.0g.ai",
+			PrivateKey:       "0xabc123",
+		},
+		prober: stubReadinessHTTPClient{
+			do: func(req *http.Request) (*http.Response, error) {
+				requestedPath = req.URL.Path
+				return makeHTTPResponse(http.StatusOK, `{"code":0,"message":"ok","data":{"networkIdentity":{"flowAddress":"0x00000000000000000000000000000000000000aa"}}}`), nil
+			},
+		},
+	}
+
+	if err := client.CheckReadiness(context.Background()); err != nil {
+		t.Fatalf("CheckReadiness() error = %v", err)
+	}
+	if requestedPath != "/node/status" {
+		t.Fatalf("requested path = %q, want /node/status", requestedPath)
+	}
+}
+
+func TestCheckReadinessFallsBackToTurboIndexer(t *testing.T) {
+	t.Parallel()
+
+	var hosts []string
+	client := &SDKClient{
+		config: SDKConfig{
+			IndexerRPCURL:    "https://broken-indexer.local",
+			BlockchainRPCURL: "https://evmrpc-testnet.0g.ai",
+			PrivateKey:       "0xabc123",
+		},
+		prober: stubReadinessHTTPClient{
+			do: func(req *http.Request) (*http.Response, error) {
+				hosts = append(hosts, req.URL.Host)
+				if req.URL.Host == "broken-indexer.local" {
+					return nil, errors.New("dial failed")
+				}
+				if req.URL.Host == "indexer-storage-testnet-turbo.0g.ai" {
+					return makeHTTPResponse(http.StatusOK, `{"code":0,"message":"ok","data":{"networkIdentity":{"flowAddress":"0x00000000000000000000000000000000000000bb"}}}`), nil
+				}
+				return nil, errors.New("unexpected host")
+			},
+		},
+	}
+
+	if err := client.CheckReadiness(context.Background()); err != nil {
+		t.Fatalf("CheckReadiness() error = %v", err)
+	}
+	if len(hosts) != 2 {
+		t.Fatalf("probe attempts = %d, want 2", len(hosts))
+	}
+}
+
+func TestCheckReadinessLiveProbeFailure(t *testing.T) {
+	t.Parallel()
+
+	client := &SDKClient{
+		config: SDKConfig{
+			IndexerRPCURL:    "https://indexer-storage-testnet-standard.0g.ai",
+			BlockchainRPCURL: "https://evmrpc-testnet.0g.ai",
+			PrivateKey:       "0xabc123",
+		},
+		prober: stubReadinessHTTPClient{
+			do: func(req *http.Request) (*http.Response, error) {
+				return makeHTTPResponse(http.StatusOK, `{"code":0,"message":"ok","data":{"networkIdentity":{"flowAddress":""}}}`), nil
+			},
+		},
+	}
+
+	err := client.CheckReadiness(context.Background())
+	if err == nil {
+		t.Fatal("CheckReadiness() error = nil, want live probe error")
+	}
+	if !strings.Contains(err.Error(), "empty flowAddress") {
+		t.Fatalf("error = %v, want empty flowAddress", err)
 	}
 }

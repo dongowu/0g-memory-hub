@@ -51,42 +51,65 @@ type AnchorInput struct {
 }
 
 type Service struct {
-	mu      sync.Mutex
-	store   Store
+	depsMu sync.RWMutex
+	store  Store
+
 	runtime RuntimeAPI
 	storage CheckpointStorage
 	anchor  CheckpointAnchor
 	nowFn   func() time.Time
+
+	workflowLocksMu sync.Mutex
+	workflowLocks   map[string]*workflowLockEntry
+}
+
+type workflowDependencies struct {
+	runtime RuntimeAPI
+	storage CheckpointStorage
+	anchor  CheckpointAnchor
+}
+
+type workflowLockEntry struct {
+	mu   sync.Mutex
+	refs int
 }
 
 func NewService(store Store) *Service {
 	return &Service{
-		store: store,
-		nowFn: func() time.Time { return time.Now().UTC() },
+		store:         store,
+		nowFn:         func() time.Time { return time.Now().UTC() },
+		workflowLocks: make(map[string]*workflowLockEntry),
 	}
 }
 
 func (s *Service) SetRuntime(runtime RuntimeAPI) {
+	s.depsMu.Lock()
+	defer s.depsMu.Unlock()
 	s.runtime = runtime
 }
 
 func (s *Service) SetStorage(storage CheckpointStorage) {
+	s.depsMu.Lock()
+	defer s.depsMu.Unlock()
 	s.storage = storage
 }
 
 func (s *Service) SetAnchor(anchor CheckpointAnchor) {
+	s.depsMu.Lock()
+	defer s.depsMu.Unlock()
 	s.anchor = anchor
 }
 
 func (s *Service) Start(workflowID string) (types.WorkflowMetadata, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	workflowID = s.ensureWorkflowID(workflowID)
+	unlock := s.lockWorkflow(workflowID)
+	defer unlock()
 	return s.startLocked(workflowID)
 }
 
 func (s *Service) startLocked(workflowID string) (types.WorkflowMetadata, error) {
 	if workflowID == "" {
-		workflowID = fmt.Sprintf("wf_%d", time.Now().UnixNano())
+		workflowID = s.ensureWorkflowID("")
 	}
 
 	meta := types.WorkflowMetadata{
@@ -105,16 +128,23 @@ func (s *Service) startLocked(workflowID string) (types.WorkflowMetadata, error)
 }
 
 func (s *Service) Step(ctx context.Context, workflowID string, event types.WorkflowStepEvent) (types.WorkflowMetadata, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.stepLocked(ctx, workflowID, event)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if workflowID == "" {
+		return types.WorkflowMetadata{}, fmt.Errorf("workflow id is required")
+	}
+
+	unlock := s.lockWorkflow(workflowID)
+	defer unlock()
+	return s.stepLocked(ctx, s.dependencies(), workflowID, event)
 }
 
-func (s *Service) stepLocked(ctx context.Context, workflowID string, event types.WorkflowStepEvent) (types.WorkflowMetadata, error) {
-	if s.runtime == nil {
+func (s *Service) stepLocked(ctx context.Context, deps workflowDependencies, workflowID string, event types.WorkflowStepEvent) (types.WorkflowMetadata, error) {
+	if deps.runtime == nil {
 		return types.WorkflowMetadata{}, fmt.Errorf("runtime is not configured")
 	}
-	if s.storage == nil {
+	if deps.storage == nil {
 		return types.WorkflowMetadata{}, fmt.Errorf("checkpoint storage is not configured")
 	}
 
@@ -148,11 +178,11 @@ func (s *Service) stepLocked(ctx context.Context, workflowID string, event types
 		})
 	}
 
-	state, err := s.runtime.ReplayWorkflow(ctx, meta.WorkflowID, meta.AgentID, runtimeEvents)
+	state, err := deps.runtime.ReplayWorkflow(ctx, meta.WorkflowID, meta.AgentID, runtimeEvents)
 	if err != nil {
 		return types.WorkflowMetadata{}, err
 	}
-	checkpoint, err := s.runtime.BuildCheckpoint(ctx, *state)
+	checkpoint, err := deps.runtime.BuildCheckpoint(ctx, *state)
 	if err != nil {
 		return types.WorkflowMetadata{}, err
 	}
@@ -160,7 +190,7 @@ func (s *Service) stepLocked(ctx context.Context, workflowID string, event types
 	if err != nil {
 		return types.WorkflowMetadata{}, err
 	}
-	key, txHash, err := s.storage.UploadCheckpoint(ctx, checkpointBlob)
+	key, txHash, err := deps.storage.UploadCheckpoint(ctx, checkpointBlob)
 	if err != nil {
 		return types.WorkflowMetadata{}, err
 	}
@@ -171,8 +201,8 @@ func (s *Service) stepLocked(ctx context.Context, workflowID string, event types
 	meta.LatestCID = key
 	meta.LatestTxHash = txHash
 
-	if s.anchor != nil {
-		anchorTxHash, err := s.anchor.AnchorCheckpoint(ctx, AnchorInput{
+	if deps.anchor != nil {
+		anchorTxHash, err := deps.anchor.AnchorCheckpoint(ctx, AnchorInput{
 			WorkflowID: hashToBytes32Hex(meta.WorkflowID),
 			StepIndex:  checkpoint.LatestStep,
 			RootHash:   normalizeBytes32Hex(checkpoint.RootHash),
@@ -194,17 +224,15 @@ func (s *Service) stepLocked(ctx context.Context, workflowID string, event types
 }
 
 func (s *Service) Ingest(ctx context.Context, event types.WorkflowStepEvent) (types.WorkflowMetadata, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	workflowID := event.WorkflowID
-	if workflowID == "" {
-		meta, err := s.startLocked("")
-		if err != nil {
-			return types.WorkflowMetadata{}, err
-		}
-		workflowID = meta.WorkflowID
-	} else if _, err := s.store.Get(workflowID); err != nil {
+	workflowID := s.ensureWorkflowID(event.WorkflowID)
+	unlock := s.lockWorkflow(workflowID)
+	defer unlock()
+
+	if _, err := s.store.Get(workflowID); err != nil {
 		if !errors.Is(err, ErrWorkflowNotFound) {
 			return types.WorkflowMetadata{}, err
 		}
@@ -213,23 +241,30 @@ func (s *Service) Ingest(ctx context.Context, event types.WorkflowStepEvent) (ty
 		}
 	}
 
-	return s.stepLocked(ctx, workflowID, event)
+	return s.stepLocked(ctx, s.dependencies(), workflowID, event)
 }
 
 func (s *Service) Resume(workflowID string) (types.WorkflowMetadata, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.resumeLocked(workflowID)
+	return s.ResumeWithContext(context.Background(), workflowID)
 }
 
-func (s *Service) resumeLocked(workflowID string) (types.WorkflowMetadata, error) {
+func (s *Service) ResumeWithContext(ctx context.Context, workflowID string) (types.WorkflowMetadata, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	unlock := s.lockWorkflow(workflowID)
+	defer unlock()
+	return s.resumeLocked(ctx, s.dependencies(), workflowID)
+}
+
+func (s *Service) resumeLocked(ctx context.Context, deps workflowDependencies, workflowID string) (types.WorkflowMetadata, error) {
 	meta, err := s.store.Get(workflowID)
 	if err != nil {
 		return types.WorkflowMetadata{}, err
 	}
 
-	if s.storage != nil && meta.LatestCID != "" {
-		payload, err := s.storage.DownloadCheckpoint(context.Background(), meta.LatestCID)
+	if deps.storage != nil && meta.LatestCID != "" {
+		payload, err := deps.storage.DownloadCheckpoint(ctx, meta.LatestCID)
 		if err != nil {
 			return types.WorkflowMetadata{}, err
 		}
@@ -271,18 +306,14 @@ func (s *Service) Status(workflowID string) (types.WorkflowMetadata, error) {
 }
 
 func (s *Service) Readiness(ctx context.Context) ReadinessReport {
-	s.mu.Lock()
-	runtime := s.runtime
-	storage := s.storage
-	anchor := s.anchor
-	s.mu.Unlock()
+	deps := s.dependencies()
 
 	report := ReadinessReport{
 		Ready: true,
 		Components: map[string]ComponentReadiness{
-			"runtime": probeReadiness(ctx, runtime, true),
-			"storage": probeReadiness(ctx, storage, true),
-			"anchor":  probeReadiness(ctx, anchor, false),
+			"runtime": probeReadiness(ctx, deps.runtime, true),
+			"storage": probeReadiness(ctx, deps.storage, true),
+			"anchor":  probeReadiness(ctx, deps.anchor, false),
 		},
 	}
 
@@ -292,6 +323,54 @@ func (s *Service) Readiness(ctx context.Context) ReadinessReport {
 		}
 	}
 	return report
+}
+
+func (s *Service) ensureWorkflowID(workflowID string) string {
+	if workflowID != "" {
+		return workflowID
+	}
+	return fmt.Sprintf("wf_%d", s.nowFn().UnixNano())
+}
+
+func (s *Service) dependencies() workflowDependencies {
+	s.depsMu.RLock()
+	defer s.depsMu.RUnlock()
+	return workflowDependencies{
+		runtime: s.runtime,
+		storage: s.storage,
+		anchor:  s.anchor,
+	}
+}
+
+func (s *Service) lockWorkflow(workflowID string) func() {
+	if workflowID == "" {
+		return func() {}
+	}
+
+	s.workflowLocksMu.Lock()
+	if s.workflowLocks == nil {
+		s.workflowLocks = make(map[string]*workflowLockEntry)
+	}
+	entry := s.workflowLocks[workflowID]
+	if entry == nil {
+		entry = &workflowLockEntry{}
+		s.workflowLocks[workflowID] = entry
+	}
+	entry.refs++
+	s.workflowLocksMu.Unlock()
+
+	entry.mu.Lock()
+
+	return func() {
+		entry.mu.Unlock()
+
+		s.workflowLocksMu.Lock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(s.workflowLocks, workflowID)
+		}
+		s.workflowLocksMu.Unlock()
+	}
 }
 
 func hashToBytes32Hex(v string) string {

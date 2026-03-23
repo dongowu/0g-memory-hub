@@ -2,9 +2,13 @@ package ogstorage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/0gfoundation/0g-storage-client/common/blockchain"
@@ -14,10 +18,11 @@ import (
 )
 
 const (
-	defaultExpectedReplica uint          = 1
-	defaultUploadTimeout   time.Duration = 5 * time.Minute
-	defaultDownloadTimeout time.Duration = 5 * time.Minute
-	defaultSelectMethod    string        = "min"
+	defaultExpectedReplica  uint          = 1
+	defaultUploadTimeout    time.Duration = 5 * time.Minute
+	defaultDownloadTimeout  time.Duration = 5 * time.Minute
+	defaultReadinessTimeout time.Duration = 3 * time.Second
+	defaultSelectMethod     string        = "min"
 )
 
 type Client interface {
@@ -38,6 +43,7 @@ type SDKConfig struct {
 	ExpectedReplica  uint
 	UploadTimeout    time.Duration
 	DownloadTimeout  time.Duration
+	ReadinessTimeout time.Duration
 }
 
 type transferAdapter interface {
@@ -45,9 +51,14 @@ type transferAdapter interface {
 	DownloadBytes(ctx context.Context, cfg SDKConfig, key string) ([]byte, error)
 }
 
+type readinessHTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 type SDKClient struct {
 	config  SDKConfig
 	adapter transferAdapter
+	prober  readinessHTTPClient
 }
 
 func NewSDKClient(cfg SDKConfig, adapter transferAdapter) *SDKClient {
@@ -60,16 +71,20 @@ func NewSDKClient(cfg SDKConfig, adapter transferAdapter) *SDKClient {
 	if cfg.DownloadTimeout <= 0 {
 		cfg.DownloadTimeout = defaultDownloadTimeout
 	}
+	if cfg.ReadinessTimeout <= 0 {
+		cfg.ReadinessTimeout = defaultReadinessTimeout
+	}
 	if adapter == nil {
 		adapter = sdkTransferAdapter{}
 	}
 	return &SDKClient{
 		config:  cfg,
 		adapter: adapter,
+		prober:  http.DefaultClient,
 	}
 }
 
-func (c *SDKClient) CheckReadiness(_ context.Context) error {
+func (c *SDKClient) CheckReadiness(ctx context.Context) error {
 	if c.config.IndexerRPCURL == "" {
 		return fmt.Errorf("0G storage indexer RPC URL is required")
 	}
@@ -78,6 +93,11 @@ func (c *SDKClient) CheckReadiness(_ context.Context) error {
 	}
 	if c.config.PrivateKey == "" {
 		return fmt.Errorf("0G private key is required for storage upload")
+	}
+	probeCtx, cancel := withTimeout(ctx, c.readinessTimeout())
+	defer cancel()
+	if err := probeIndexerReachability(probeCtx, c.config.IndexerRPCURL, c.readinessClient()); err != nil {
+		return fmt.Errorf("probe 0G storage indexer: %w", err)
 	}
 	return nil
 }
@@ -128,6 +148,65 @@ func withTimeout(ctx context.Context, timeout time.Duration) (context.Context, c
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, timeout)
+}
+
+func (c *SDKClient) readinessTimeout() time.Duration {
+	if c.config.ReadinessTimeout > 0 {
+		return c.config.ReadinessTimeout
+	}
+	return defaultReadinessTimeout
+}
+
+func (c *SDKClient) readinessClient() readinessHTTPClient {
+	if c.prober != nil {
+		return c.prober
+	}
+	return http.DefaultClient
+}
+
+func probeIndexerReachability(ctx context.Context, primary string, client readinessHTTPClient) error {
+	candidates := candidateIndexerBaseURLs(primary)
+	var errs []string
+	for _, baseURL := range candidates {
+		if err := probeIndexerNodeStatus(ctx, baseURL, client); err == nil {
+			return nil
+		} else {
+			errs = append(errs, fmt.Sprintf("%s: %v", baseURL, err))
+		}
+	}
+	return fmt.Errorf("%s", strings.Join(errs, "; "))
+}
+
+func probeIndexerNodeStatus(ctx context.Context, baseURL string, client readinessHTTPClient) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/node/status", nil)
+	if err != nil {
+		return fmt.Errorf("create /node/status request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request /node/status: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read /node/status response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/node/status http %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var envelope directNodeStatusEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return fmt.Errorf("decode /node/status response: %w", err)
+	}
+	if envelope.Code != 0 {
+		return fmt.Errorf("/node/status code=%d message=%s", envelope.Code, envelope.Message)
+	}
+	if strings.TrimSpace(envelope.Data.NetworkIdentity.FlowAddress) == "" {
+		return fmt.Errorf("/node/status returned empty flowAddress")
+	}
+	return nil
 }
 
 type sdkTransferAdapter struct{}

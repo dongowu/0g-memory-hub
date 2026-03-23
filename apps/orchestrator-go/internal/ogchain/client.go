@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -29,6 +30,8 @@ var (
 	ErrInvalidContract    = errors.New("invalid contract address")
 	ErrInvalidTransaction = errors.New("invalid signed transaction")
 )
+
+const defaultReadinessProbeTimeout = 3 * time.Second
 
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -80,14 +83,15 @@ func NewJSONRPCClient(rpcURL, privateKey, contractAddress, chainID string, httpC
 	}
 }
 
-func (c *JSONRPCClient) CheckReadiness(_ context.Context) error {
+func (c *JSONRPCClient) CheckReadiness(ctx context.Context) error {
 	if strings.TrimSpace(c.rpcURL) == "" {
 		return fmt.Errorf("chain RPC URL is required")
 	}
 	if strings.TrimSpace(c.privateKey) == "" {
 		return ErrMissingPrivateKey
 	}
-	if _, err := parseChainID(c.chainID); err != nil {
+	expectedChainID, err := parseChainID(c.chainID)
+	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidChainID, err)
 	}
 	if !common.IsHexAddress(c.contractAddress) {
@@ -95,6 +99,20 @@ func (c *JSONRPCClient) CheckReadiness(_ context.Context) error {
 	}
 	if _, err := crypto.HexToECDSA(strings.TrimPrefix(c.privateKey, "0x")); err != nil {
 		return fmt.Errorf("parse private key: %w", err)
+	}
+
+	probeCtx, cancel := ensureTimeout(ctx, defaultReadinessProbeTimeout)
+	defer cancel()
+
+	liveChainID, err := c.getChainID(probeCtx)
+	if err != nil {
+		return fmt.Errorf("probe chain rpc via eth_chainId: %w", err)
+	}
+	if liveChainID.Cmp(expectedChainID) != 0 {
+		return fmt.Errorf("chain rpc chain id mismatch: got %s want %s", liveChainID.String(), expectedChainID.String())
+	}
+	if _, err := c.getBlockNumber(probeCtx); err != nil {
+		return fmt.Errorf("probe chain rpc via eth_blockNumber: %w", err)
 	}
 	return nil
 }
@@ -327,6 +345,34 @@ func (c *JSONRPCClient) sendRawTransaction(ctx context.Context, rawTx string) (s
 	return strings.ToLower(txHash), nil
 }
 
+func (c *JSONRPCClient) getChainID(ctx context.Context) (*big.Int, error) {
+	req := rpcRequest{
+		JSONRPC: "2.0",
+		Method:  "eth_chainId",
+		Params:  []interface{}{},
+		ID:      1,
+	}
+	raw, err := c.call(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return hexToBigInt(raw)
+}
+
+func (c *JSONRPCClient) getBlockNumber(ctx context.Context) (uint64, error) {
+	req := rpcRequest{
+		JSONRPC: "2.0",
+		Method:  "eth_blockNumber",
+		Params:  []interface{}{},
+		ID:      1,
+	}
+	raw, err := c.call(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	return hexToUint64(raw)
+}
+
 func encodeAnchorCheckpointInput(workflowID string, stepIndex uint64, rootHash string, cidHash string) (string, error) {
 	selector := methodSelector("anchorCheckpoint(bytes32,uint64,bytes32,bytes32)")
 	wf, err := parseBytes32(workflowID)
@@ -423,6 +469,13 @@ func parseChainID(chainID string) (*big.Int, error) {
 		return nil, ErrInvalidChainID
 	}
 	return n, nil
+}
+
+func ensureTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 func hexToUint64(raw json.RawMessage) (uint64, error) {

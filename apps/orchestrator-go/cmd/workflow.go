@@ -157,7 +157,7 @@ var workflowResumeCmd = &cobra.Command{
 			return err
 		}
 
-		meta, err := svc.Resume(args[0])
+		meta, err := svc.ResumeWithContext(context.Background(), args[0])
 		if err != nil {
 			return err
 		}

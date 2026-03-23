@@ -81,9 +81,15 @@ The HTTP path is retry-safe for duplicate `eventId` values and uses the persiste
 `/health` returns:
 
 - `200` when required service dependencies are ready
-- `503` when runtime or storage readiness fails
+- `503` when runtime or storage readiness fails, including the case where dependencies are configured but currently unreachable
 
 The response includes per-component readiness so you can tell whether the issue is runtime, storage, or optional anchor configuration.
+
+Readiness probes are lightweight live checks:
+
+- `runtime`: Rust stdio runtime probe
+- `storage`: 0G indexer `/node/status`
+- `anchor`: optional chain RPC `eth_chainId` + `eth_blockNumber`
 
 ## 6. Full step flow (requires current official storage integration)
 
