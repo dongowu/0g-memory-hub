@@ -74,6 +74,10 @@ curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest/batch \
 curl http://127.0.0.1:8080/v1/workflows/demo-http
 curl http://127.0.0.1:8080/v1/workflows/demo-http/replay
 curl -X POST http://127.0.0.1:8080/v1/workflows/demo-http/resume
+curl http://127.0.0.1:8080/v1/openclaw/runs/demo-http/context
+curl http://127.0.0.1:8080/v1/openclaw/runs/demo-http/checkpoint/latest
+curl -X POST http://127.0.0.1:8080/v1/openclaw/runs/demo-http/hydrate
+curl http://127.0.0.1:8080/v1/openclaw/runs/demo-http/trace
 ```
 
 The HTTP path is retry-safe for duplicate `eventId` values and uses the persistent Rust runtime transport under the hood.

@@ -38,13 +38,13 @@ For OpenClaw-style orchestration, this creates three infra problems:
 
 ## 5. Solution
 
-This project turns agent execution into a durable workflow primitive:
+This project turns agent execution into a durable OpenClaw run memory primitive:
 
-- The **Go orchestrator** exposes an OpenClaw-facing HTTP API and workflow CLI.
+- The **Go orchestrator** exposes an OpenClaw-facing HTTP API, workflow CLI, plus the new run context, checkpoint, hydrate, and trace endpoints.
 - The **Rust runtime** deterministically replays events and builds checkpoints.
 - The **0G Storage path** persists checkpoint blobs for long-term recovery.
 - The **0G Chain path** anchors verification metadata such as workflow ID, step index, root hash, and CID hash.
-- The service supports **replay**, **resume**, **health checks**, **batch ingest**, and **idempotent event ingestion** so workflows behave like real infra rather than a one-shot demo script.
+ - The service supports **replay**, **resume**, **health checks**, **run context**, **checkpoint metadata**, **hydrate**, **trace**, **batch ingest**, and **idempotent event ingestion** so workflows behave like real infra rather than a one-shot demo script.
 
 ---
 
@@ -80,9 +80,13 @@ Without that combination, the system would be only a local runtime and not a cre
 
 - OpenClaw-style single-event ingest
 - OpenClaw-style batch ingest with per-item results
+- Rich OpenClaw event metadata preservation (`runId`, `sessionId`, `traceId`, `parentEventId`, `toolCallId`, `skillName`, `taskId`, `role`)
 - Idempotent event handling by `eventId`
 - Deterministic Rust checkpoint generation
-- Workflow replay and resume
+- Workflow replay, hydrate, and resume
+- OpenClaw run context endpoint
+- OpenClaw latest checkpoint endpoint
+- OpenClaw judge-friendly trace endpoint
 - 0G Storage checkpoint upload / download path
 - MemoryAnchor chain anchor path
 - HTTP health endpoint with live dependency probes

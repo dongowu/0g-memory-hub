@@ -47,6 +47,7 @@ Say:
 - Rust handles deterministic workflow state and checkpoints.
 - Contract stores workflow-centric anchors.
 - The point is durable and inspectable agent memory, not just local runtime state.
+ - Judges can read the run context, checkpoint metadata, hydrate back into memory, and inspect the trace after each step.
 
 ### 0:30 - 1:15 Baseline run
 
@@ -99,7 +100,25 @@ Explain:
 - Replay gives judge-readable execution trace and checkpoint linkage.
 - If the process dies, the workflow can still be recovered from persisted state.
 
-### 2:40 - 3:00 Chain proof path
+### 2:40 - 2:55 Read + Hydrate + Trace
+
+Run:
+
+```bash
+curl http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/context
+curl http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/checkpoint/latest
+curl -X POST http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/hydrate
+curl http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/trace
+```
+
+Explain:
+
+- `context` returns run metadata plus the last few events with their richer OpenClaw fields.
+- `checkpoint/latest` shows the root/cid/tx for the persisted checkpoint.
+- `hydrate` demonstrates how the run can recover state and continue.
+- `trace` presents the ordered run timeline with event IDs, roles, skills, and tool calls for judges to follow.
+
+### 2:55 - 3:00 Chain proof path
 
 Show:
 

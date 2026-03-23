@@ -14,6 +14,8 @@ This repository demonstrates that claim with:
 - **0G Chain anchoring** for public verification metadata
 - **Replay / resume / readiness** for operator-facing workflow reliability
 
+Every stored event keeps the richer OpenClaw semantics judges expect — `runId`, `sessionId`, `traceId`, `parentEventId`, `toolCallId`, `skillName`, `taskId`, and `role` — so the workflow trace can map directly back to what the agent planned, executed, or remembered.
+
 ## Why this matters for 0G
 
 - **0G Storage** gives the workflow a durable place to persist checkpoint state outside the running process.
@@ -158,6 +160,10 @@ Available endpoints:
 - `GET /v1/workflows/{id}`
 - `POST /v1/workflows/{id}/resume`
 - `GET /v1/workflows/{id}/replay`
+- `GET /v1/openclaw/runs/{id}/context` (run metadata + recent events)
+- `GET /v1/openclaw/runs/{id}/checkpoint/latest` (latest checkpoint root/cid/tx)
+- `POST /v1/openclaw/runs/{id}/hydrate` (resume from the persisted checkpoint)
+- `GET /v1/openclaw/runs/{id}/trace` (judge-friendly run timeline)
 
 Example single ingest:
 

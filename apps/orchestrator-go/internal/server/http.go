@@ -80,6 +80,7 @@ func NewHandler(svc *workflow.Service) http.Handler {
 	h.mux.HandleFunc("/health", h.handleHealth)
 	h.mux.HandleFunc("/v1/openclaw/ingest", h.handleOpenClawIngest)
 	h.mux.HandleFunc("/v1/openclaw/ingest/batch", h.handleOpenClawBatchIngest)
+	h.mux.HandleFunc("/v1/openclaw/runs/", h.handleOpenClawRunRoutes)
 	h.mux.HandleFunc("/v1/workflows/", h.handleWorkflowRoutes)
 
 	return h
@@ -184,6 +185,60 @@ func (h *Handler) handleOpenClawBatchIngest(w http.ResponseWriter, r *http.Reque
 		"successCount": successCount,
 		"failureCount": failureCount,
 	})
+}
+
+func (h *Handler) handleOpenClawRunRoutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/v1/openclaw/runs/")
+	path = strings.Trim(path, "/")
+	if path == "" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "openclaw run route not found")
+		return
+	}
+
+	parts := strings.Split(path, "/")
+	runID := parts[0]
+
+	if len(parts) == 2 && parts[1] == "context" && r.Method == http.MethodGet {
+		contextView, err := h.svc.RunContext(runID)
+		if err != nil {
+			handleWorkflowError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, contextView)
+		return
+	}
+
+	if len(parts) == 3 && parts[1] == "checkpoint" && parts[2] == "latest" && r.Method == http.MethodGet {
+		checkpointView, err := h.svc.LatestCheckpoint(runID)
+		if err != nil {
+			handleWorkflowError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, checkpointView)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "hydrate" && r.Method == http.MethodPost {
+		contextView, err := h.svc.Hydrate(r.Context(), runID)
+		if err != nil {
+			handleWorkflowError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, contextView)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "trace" && r.Method == http.MethodGet {
+		traceView, err := h.svc.RunTrace(runID)
+		if err != nil {
+			handleWorkflowError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, traceView)
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "NOT_FOUND", "openclaw run route not found")
 }
 
 func (h *Handler) handleWorkflowRoutes(w http.ResponseWriter, r *http.Request) {

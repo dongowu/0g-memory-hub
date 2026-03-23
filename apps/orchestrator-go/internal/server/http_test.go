@@ -367,6 +367,87 @@ func TestHandlerOpenClawBatchIngestProcessesMultipleEvents(t *testing.T) {
 	}
 }
 
+func TestHandlerOpenClawBatchIngestPreservesExtendedMetadata(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(newTestService(t))
+	reqBody := bytes.NewBufferString(`{
+		"events": [
+			{
+				"workflowId":"wf-batch-openclaw",
+				"runId":"run-batch-openclaw",
+				"sessionId":"session-batch-openclaw",
+				"traceId":"trace-batch-openclaw",
+				"eventId":"evt-batch-1",
+				"eventType":"tool_call",
+				"actor":"coordinator",
+				"role":"planner",
+				"toolCallId":"tool-batch-1",
+				"skillName":"search_skill",
+				"taskId":"task-batch-1",
+				"payload":{"tool":"search"}
+			}
+		]
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/openclaw/ingest/batch", reqBody)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("batch ingest status = %d, want 200 body=%s", rec.Code, rec.Body.String())
+	}
+
+	contextReq := httptest.NewRequest(http.MethodGet, "/v1/openclaw/runs/run-batch-openclaw/context", nil)
+	contextRec := httptest.NewRecorder()
+	handler.ServeHTTP(contextRec, contextReq)
+	if contextRec.Code != http.StatusOK {
+		t.Fatalf("context status = %d, want 200 body=%s", contextRec.Code, contextRec.Body.String())
+	}
+
+	var contextOut struct {
+		Data struct {
+			WorkflowID string `json:"workflowId"`
+			RunID     string `json:"runId"`
+			SessionID string `json:"sessionId"`
+			TraceID   string `json:"traceId"`
+			Events    []struct {
+				Role       string `json:"role"`
+				ToolCallID string `json:"toolCallId"`
+				SkillName  string `json:"skillName"`
+				TaskID     string `json:"taskId"`
+			} `json:"events"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(contextRec.Body.Bytes(), &contextOut); err != nil {
+		t.Fatalf("decode context response: %v", err)
+	}
+	if contextOut.Data.RunID != "run-batch-openclaw" {
+		t.Fatalf("runId = %q, want run-batch-openclaw", contextOut.Data.RunID)
+	}
+	if contextOut.Data.WorkflowID != "wf-batch-openclaw" {
+		t.Fatalf("workflowId = %q, want wf-batch-openclaw", contextOut.Data.WorkflowID)
+	}
+	if contextOut.Data.SessionID != "session-batch-openclaw" || contextOut.Data.TraceID != "trace-batch-openclaw" {
+		t.Fatalf("unexpected session/trace values: session=%q trace=%q", contextOut.Data.SessionID, contextOut.Data.TraceID)
+	}
+	if len(contextOut.Data.Events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(contextOut.Data.Events))
+	}
+	if contextOut.Data.Events[0].Role != "planner" {
+		t.Fatalf("role = %q, want planner", contextOut.Data.Events[0].Role)
+	}
+	if contextOut.Data.Events[0].ToolCallID != "tool-batch-1" {
+		t.Fatalf("toolCallId = %q, want tool-batch-1", contextOut.Data.Events[0].ToolCallID)
+	}
+	if contextOut.Data.Events[0].SkillName != "search_skill" {
+		t.Fatalf("skillName = %q, want search_skill", contextOut.Data.Events[0].SkillName)
+	}
+	if contextOut.Data.Events[0].TaskID != "task-batch-1" {
+		t.Fatalf("taskId = %q, want task-batch-1", contextOut.Data.Events[0].TaskID)
+	}
+}
+
 func TestHandlerOpenClawIngestRejectsOversizedBody(t *testing.T) {
 	t.Parallel()
 
@@ -582,5 +663,119 @@ func TestHandlerWorkflowResumePropagatesRequestContext(t *testing.T) {
 	}
 	if got := storage.lastDownloadCtx.Value(traceKey); got != "trace-123" {
 		t.Fatalf("download context value = %v, want trace-123", got)
+	}
+}
+
+func TestHandlerOpenClawRunRoutesContextCheckpointHydrateAndTrace(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(newTestService(t))
+	body := bytes.NewBufferString(`{
+		"workflowId":"wf-openclaw",
+		"runId":"run-openclaw",
+		"sessionId":"session-openclaw",
+		"traceId":"trace-openclaw",
+		"eventId":"evt-oc-1",
+		"eventType":"tool_call",
+		"actor":"coordinator",
+		"role":"planner",
+		"toolCallId":"tool-oc-1",
+		"skillName":"search_skill",
+		"taskId":"task-oc-1",
+		"payload":{"tool":"search"}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/openclaw/ingest", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ingest status = %d, want 200 body=%s", rec.Code, rec.Body.String())
+	}
+
+	contextReq := httptest.NewRequest(http.MethodGet, "/v1/openclaw/runs/run-openclaw/context", nil)
+	contextRec := httptest.NewRecorder()
+	handler.ServeHTTP(contextRec, contextReq)
+	if contextRec.Code != http.StatusOK {
+		t.Fatalf("context status = %d, want 200 body=%s", contextRec.Code, contextRec.Body.String())
+	}
+	var contextOut struct {
+		Data struct {
+			WorkflowID string `json:"workflowId"`
+			RunID      string `json:"runId"`
+			SessionID  string `json:"sessionId"`
+			TraceID    string `json:"traceId"`
+			Events     []struct {
+				EventID    string `json:"eventId"`
+				Role       string `json:"role"`
+				ToolCallID string `json:"toolCallId"`
+				SkillName  string `json:"skillName"`
+			} `json:"events"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(contextRec.Body.Bytes(), &contextOut); err != nil {
+		t.Fatalf("decode context response: %v", err)
+	}
+	if contextOut.Data.WorkflowID != "wf-openclaw" {
+		t.Fatalf("workflowId = %q, want wf-openclaw", contextOut.Data.WorkflowID)
+	}
+	if contextOut.Data.RunID != "run-openclaw" {
+		t.Fatalf("runId = %q, want run-openclaw", contextOut.Data.RunID)
+	}
+	if contextOut.Data.SessionID != "session-openclaw" || contextOut.Data.TraceID != "trace-openclaw" {
+		t.Fatalf("unexpected session/trace values: session=%q trace=%q", contextOut.Data.SessionID, contextOut.Data.TraceID)
+	}
+	if len(contextOut.Data.Events) != 1 || contextOut.Data.Events[0].ToolCallID != "tool-oc-1" {
+		t.Fatalf("unexpected context events: %+v", contextOut.Data.Events)
+	}
+
+	checkpointReq := httptest.NewRequest(http.MethodGet, "/v1/openclaw/runs/run-openclaw/checkpoint/latest", nil)
+	checkpointRec := httptest.NewRecorder()
+	handler.ServeHTTP(checkpointRec, checkpointReq)
+	if checkpointRec.Code != http.StatusOK {
+		t.Fatalf("checkpoint status = %d, want 200 body=%s", checkpointRec.Code, checkpointRec.Body.String())
+	}
+	var checkpointOut struct {
+		Data struct {
+			WorkflowID string `json:"workflowId"`
+			LatestCID  string `json:"latestCid"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(checkpointRec.Body.Bytes(), &checkpointOut); err != nil {
+		t.Fatalf("decode checkpoint response: %v", err)
+	}
+	if checkpointOut.Data.WorkflowID != "wf-openclaw" || checkpointOut.Data.LatestCID == "" {
+		t.Fatalf("unexpected checkpoint response: %+v", checkpointOut.Data)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/openclaw/runs/run-openclaw/trace", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200 body=%s", traceRec.Code, traceRec.Body.String())
+	}
+	var traceOut struct {
+		Data struct {
+			WorkflowID string `json:"workflowId"`
+			Steps      []struct {
+				EventID string `json:"eventId"`
+				Role    string `json:"role"`
+			} `json:"steps"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(traceRec.Body.Bytes(), &traceOut); err != nil {
+		t.Fatalf("decode trace response: %v", err)
+	}
+	if traceOut.Data.WorkflowID != "wf-openclaw" || len(traceOut.Data.Steps) != 1 {
+		t.Fatalf("unexpected trace response: %+v", traceOut.Data)
+	}
+	if traceOut.Data.Steps[0].Role != "planner" {
+		t.Fatalf("trace step role = %q, want planner", traceOut.Data.Steps[0].Role)
+	}
+
+	hydrateReq := httptest.NewRequest(http.MethodPost, "/v1/openclaw/runs/run-openclaw/hydrate", nil)
+	hydrateRec := httptest.NewRecorder()
+	handler.ServeHTTP(hydrateRec, hydrateReq)
+	if hydrateRec.Code != http.StatusOK {
+		t.Fatalf("hydrate status = %d, want 200 body=%s", hydrateRec.Code, hydrateRec.Body.String())
 	}
 }

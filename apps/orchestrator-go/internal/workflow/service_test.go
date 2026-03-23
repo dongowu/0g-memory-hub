@@ -655,3 +655,220 @@ func TestServiceStepConcurrentDifferentWorkflowsDoNotBlockEachOther(t *testing.T
 		t.Fatal("second workflow was blocked by shared service lock")
 	}
 }
+
+func TestServiceRunContextIncludesExtendedMetadata(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	svc.SetStorage(&fakeStorage{key: "cid-context"})
+
+	_, err = svc.Ingest(context.Background(), types.WorkflowStepEvent{
+		WorkflowID:    "wf-context",
+		RunID:         "run-context",
+		SessionID:     "session-context",
+		TraceID:       "trace-context",
+		EventID:       "evt-ctx-1",
+		EventType:     "tool_call",
+		Actor:         "coordinator",
+		Role:          "planner",
+		ParentEventID: "evt-parent",
+		ToolCallID:    "tool-call-ctx",
+		SkillName:     "memory_reader",
+		TaskID:        "task-ctx",
+		Payload:       `{"q":"hello"}`,
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	ctxView, err := svc.RunContext("wf-context")
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+
+	if ctxView.WorkflowID != "wf-context" {
+		t.Fatalf("WorkflowID = %q, want wf-context", ctxView.WorkflowID)
+	}
+	if ctxView.RunID != "run-context" {
+		t.Fatalf("RunID = %q, want run-context", ctxView.RunID)
+	}
+	if len(ctxView.Events) != 1 {
+		t.Fatalf("len(Events) = %d, want 1", len(ctxView.Events))
+	}
+	if ctxView.Events[0].ToolCallID != "tool-call-ctx" {
+		t.Fatalf("ToolCallID = %q, want tool-call-ctx", ctxView.Events[0].ToolCallID)
+	}
+	if ctxView.Events[0].Role != "planner" {
+		t.Fatalf("Role = %q, want planner", ctxView.Events[0].Role)
+	}
+}
+
+func TestServiceRunContextResolvesRunIDWhenWorkflowIDDiffers(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	svc.SetStorage(&fakeStorage{key: "cid-run-lookup"})
+
+	_, err = svc.Ingest(context.Background(), types.WorkflowStepEvent{
+		WorkflowID: "wf-run-lookup",
+		RunID:      "run-run-lookup",
+		EventID:    "evt-run-lookup-1",
+		EventType:  "tool_call",
+		Actor:      "coordinator",
+		Role:       "planner",
+		Payload:    `{"tool":"search"}`,
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	ctxView, err := svc.RunContext("run-run-lookup")
+	if err != nil {
+		t.Fatalf("RunContext() by runId error = %v", err)
+	}
+	if ctxView.WorkflowID != "wf-run-lookup" {
+		t.Fatalf("WorkflowID = %q, want wf-run-lookup", ctxView.WorkflowID)
+	}
+	if ctxView.RunID != "run-run-lookup" {
+		t.Fatalf("RunID = %q, want run-run-lookup", ctxView.RunID)
+	}
+}
+
+func TestServiceLatestCheckpointAndRunTrace(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	svc.SetStorage(&fakeStorage{key: "cid-trace"})
+
+	events := []types.WorkflowStepEvent{
+		{
+			WorkflowID: "wf-trace",
+			RunID:      "run-trace",
+			TraceID:    "trace-1",
+			EventID:    "evt-1",
+			EventType:  "tool_call",
+			Actor:      "planner",
+			Role:       "planner",
+			ToolCallID: "tool-1",
+			SkillName:  "search_skill",
+			Payload:    `{"tool":"search"}`,
+		},
+		{
+			WorkflowID:    "wf-trace",
+			RunID:         "run-trace",
+			TraceID:       "trace-1",
+			ParentEventID: "evt-1",
+			EventID:       "evt-2",
+			EventType:     "tool_result",
+			Actor:         "worker",
+			Role:          "executor",
+			ToolCallID:    "tool-1",
+			SkillName:     "search_skill",
+			Payload:       `{"ok":true}`,
+		},
+	}
+	for _, event := range events {
+		if _, err := svc.Ingest(context.Background(), event); err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+	}
+
+	cp, err := svc.LatestCheckpoint("wf-trace")
+	if err != nil {
+		t.Fatalf("LatestCheckpoint() error = %v", err)
+	}
+	if cp.WorkflowID != "wf-trace" || cp.LatestCID != "cid-trace" {
+		t.Fatalf("checkpoint mismatch: %+v", cp)
+	}
+	if cp.LatestStep != 2 {
+		t.Fatalf("LatestStep = %d, want 2", cp.LatestStep)
+	}
+
+	trace, err := svc.RunTrace("wf-trace")
+	if err != nil {
+		t.Fatalf("RunTrace() error = %v", err)
+	}
+	if len(trace.Steps) != 2 {
+		t.Fatalf("len(trace.Steps) = %d, want 2", len(trace.Steps))
+	}
+	if trace.Steps[1].ParentEventID != "evt-1" {
+		t.Fatalf("ParentEventID = %q, want evt-1", trace.Steps[1].ParentEventID)
+	}
+	if trace.Steps[0].SkillName != "search_skill" {
+		t.Fatalf("SkillName = %q, want search_skill", trace.Steps[0].SkillName)
+	}
+}
+
+func TestServiceHydrateUsesCallerContext(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	downloadCheckpoint := RuntimeCheckpoint{
+		WorkflowID: "wf-hydrate",
+		AgentID:    "agent-wf-hydrate",
+		LatestStep: 1,
+		RootHash:   "root-from-download",
+		Status:     RuntimeStatusRunning,
+		Events: []RuntimeEvent{
+			{EventID: "evt-0", StepIndex: 0, EventType: "tool_call", Actor: "planner", Payload: "{}"},
+		},
+	}
+	raw, err := json.Marshal(downloadCheckpoint)
+	if err != nil {
+		t.Fatalf("marshal checkpoint: %v", err)
+	}
+	st := &fakeStorage{download: raw}
+	svc.SetStorage(st)
+
+	if _, err := svc.Start("wf-hydrate"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	meta, err := svc.Status("wf-hydrate")
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	meta.LatestCID = "cid-hydrate"
+	if err := store.Save(meta); err != nil {
+		t.Fatalf("store.Save() error = %v", err)
+	}
+
+	type ctxKey string
+	ctx := context.WithValue(context.Background(), ctxKey("trace-id"), "trace-hydrate")
+	ctxView, err := svc.Hydrate(ctx, "wf-hydrate")
+	if err != nil {
+		t.Fatalf("Hydrate() error = %v", err)
+	}
+	if ctxView.WorkflowID != "wf-hydrate" {
+		t.Fatalf("WorkflowID = %q, want wf-hydrate", ctxView.WorkflowID)
+	}
+	if st.lastCtx == nil || st.lastCtx.Value(ctxKey("trace-id")) != "trace-hydrate" {
+		t.Fatalf("expected hydrate to propagate context, got=%v", st.lastCtx)
+	}
+}

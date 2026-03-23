@@ -28,13 +28,13 @@ Use this file as the direct source when filling HackQuest fields.
 
 ## 3. What the Project Does
 
-0G OpenClaw Memory Runtime is a workflow memory layer for long-lived agent execution. It accepts OpenClaw-style events through a Go orchestrator, deterministically rebuilds state in a Rust runtime, writes checkpoints to 0G Storage, and anchors verification metadata on-chain so workflows can be replayed, resumed, and externally verified.
+0G OpenClaw Memory Runtime is a workflow memory layer for long-lived agent execution. It accepts OpenClaw-style events through a Go orchestrator, deterministically rebuilds state in a Rust runtime, writes checkpoints to 0G Storage, and anchors verification metadata on-chain so workflows can be replayed, resumed, and externally verified. The service also exposes run context, checkpoint metadata, hydrate, and trace endpoints so planners and judges can read the recovered memory directly.
 
 ---
 
 ## 4. What Problem It Solves
 
-Most agent demos lose workflow state when the process exits, and even when data is persisted there is usually no clean replay / resume path and no verifiable link between off-chain execution state and on-chain proof. This project solves that by turning agent execution into a durable workflow primitive instead of transient runtime memory.
+Most agent demos lose workflow state when the process exits, and even when data is persisted there is usually no clean replay / resume path and no verifiable link between off-chain execution state and on-chain proof. This project solves that by turning agent execution into a durable workflow primitive with read/hydrate/trace contracts instead of transient runtime memory.
 
 ---
 
@@ -72,6 +72,10 @@ That makes it a direct fit for the Agentic Infrastructure & OpenClaw Lab track.
 - deterministic checkpoint generation in Rust
 - workflow replay
 - workflow resume
+- run context endpoint with richer OpenClaw metadata
+- checkpoint metadata endpoint
+- hydrate endpoint to recover from persisted state
+- trace endpoint that links steps, roles, tools, skills, and checkpoints
 - 0G Storage checkpoint upload / download path
 - 0G Chain anchor path
 - service health/readiness endpoint with live dependency probing

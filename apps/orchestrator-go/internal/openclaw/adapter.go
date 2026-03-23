@@ -9,13 +9,19 @@ import (
 
 // EventInput is the richer input format expected from OpenClaw events.
 type EventInput struct {
-	EventID    string
-	WorkflowID string
-	RunID      string
-	SessionID  string
-	EventType  string
-	Actor      string
-	Payload    any
+	EventID       string `json:"eventId"`
+	WorkflowID    string `json:"workflowId"`
+	RunID         string `json:"runId"`
+	SessionID     string `json:"sessionId"`
+	TraceID       string `json:"traceId"`
+	ParentEventID string `json:"parentEventId"`
+	ToolCallID    string `json:"toolCallId"`
+	SkillName     string `json:"skillName"`
+	TaskID        string `json:"taskId"`
+	Role          string `json:"role"`
+	EventType     string `json:"eventType"`
+	Actor         string `json:"actor"`
+	Payload       any    `json:"payload"`
 }
 
 // StepInput keeps backward compatibility with older CLI-only inputs.
@@ -31,6 +37,10 @@ func NormalizeEvent(in EventInput) types.WorkflowStepEvent {
 	if actor == "" {
 		actor = "openclaw"
 	}
+	role := in.Role
+	if role == "" {
+		role = actor
+	}
 	workflowID := in.WorkflowID
 	if workflowID == "" {
 		workflowID = in.RunID
@@ -40,12 +50,20 @@ func NormalizeEvent(in EventInput) types.WorkflowStepEvent {
 	}
 
 	return types.WorkflowStepEvent{
-		EventID:    in.EventID,
-		WorkflowID: workflowID,
-		EventType:  eventType,
-		Actor:      actor,
-		Payload:    normalizePayload(in.Payload),
-		CreatedAt:  time.Now().UTC(),
+		EventID:       in.EventID,
+		WorkflowID:    workflowID,
+		RunID:         in.RunID,
+		SessionID:     in.SessionID,
+		TraceID:       in.TraceID,
+		ParentEventID: in.ParentEventID,
+		ToolCallID:    in.ToolCallID,
+		SkillName:     in.SkillName,
+		TaskID:        in.TaskID,
+		Role:          role,
+		EventType:     eventType,
+		Actor:         actor,
+		Payload:       normalizePayload(in.Payload),
+		CreatedAt:     time.Now().UTC(),
 	}
 }
 

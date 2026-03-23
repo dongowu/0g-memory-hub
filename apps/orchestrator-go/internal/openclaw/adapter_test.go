@@ -63,3 +63,51 @@ func TestNormalizeEventFallsBackToRunIDAndDefaults(t *testing.T) {
 		t.Fatalf("Payload = %q, want {}", got.Payload)
 	}
 }
+
+func TestNormalizeEventPreservesExtendedOpenClawMetadata(t *testing.T) {
+	t.Parallel()
+
+	got := NormalizeEvent(EventInput{
+		EventID:       "evt-extended",
+		WorkflowID:    "wf-extended",
+		RunID:         "run-extended",
+		SessionID:     "session-extended",
+		TraceID:       "trace-extended",
+		ParentEventID: "evt-parent",
+		ToolCallID:    "tool-call-1",
+		SkillName:     "memory_reader",
+		TaskID:        "task-42",
+		Role:          "planner",
+		EventType:     "tool_call",
+		Actor:         "coordinator",
+		Payload:       map[string]any{"input": "hello"},
+	})
+
+	if got.RunID != "run-extended" {
+		t.Fatalf("RunID = %q, want run-extended", got.RunID)
+	}
+	if got.SessionID != "session-extended" {
+		t.Fatalf("SessionID = %q, want session-extended", got.SessionID)
+	}
+	if got.TraceID != "trace-extended" {
+		t.Fatalf("TraceID = %q, want trace-extended", got.TraceID)
+	}
+	if got.ParentEventID != "evt-parent" {
+		t.Fatalf("ParentEventID = %q, want evt-parent", got.ParentEventID)
+	}
+	if got.ToolCallID != "tool-call-1" {
+		t.Fatalf("ToolCallID = %q, want tool-call-1", got.ToolCallID)
+	}
+	if got.SkillName != "memory_reader" {
+		t.Fatalf("SkillName = %q, want memory_reader", got.SkillName)
+	}
+	if got.TaskID != "task-42" {
+		t.Fatalf("TaskID = %q, want task-42", got.TaskID)
+	}
+	if got.Role != "planner" {
+		t.Fatalf("Role = %q, want planner", got.Role)
+	}
+	if got.Actor != "coordinator" {
+		t.Fatalf("Actor = %q, want coordinator", got.Actor)
+	}
+}
