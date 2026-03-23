@@ -2,7 +2,7 @@ require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
 const TESTNET_RPC_URL = process.env.OG_CHAIN_RPC || "https://evmrpc-testnet.0g.ai";
-const MAINNET_RPC_URL = process.env.OG_MAINNET_RPC || "https://rpc.0g.ai";
+const MAINNET_RPC_URL = process.env.OG_MAINNET_RPC || "https://evmrpc.0g.ai";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 
 function configuredAccounts() {
@@ -17,8 +17,8 @@ function configuredChainID(value) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-const testnetChainID = configuredChainID(process.env.OG_TESTNET_CHAIN_ID || "16601");
-const mainnetChainID = configuredChainID(process.env.OG_MAINNET_CHAIN_ID);
+const testnetChainID = configuredChainID(process.env.OG_TESTNET_CHAIN_ID || "16602");
+const mainnetChainID = configuredChainID(process.env.OG_MAINNET_CHAIN_ID || "16661");
 
 module.exports = {
   solidity: {
@@ -56,24 +56,20 @@ module.exports = {
     customChains: [
       {
         network: "0g-testnet",
-        chainId: testnetChainID || 16601,
+        chainId: testnetChainID || 16602,
         urls: {
           apiURL: process.env.OG_TESTNET_EXPLORER_API_URL || "https://chainscan-galileo.0g.ai/api",
           browserURL: process.env.OG_TESTNET_EXPLORER_URL || "https://chainscan-galileo.0g.ai",
         },
       },
-      ...(mainnetChainID
-        ? [
-            {
-              network: "0g-mainnet",
-              chainId: mainnetChainID,
-              urls: {
-                apiURL: process.env.OG_MAINNET_EXPLORER_API_URL || "",
-                browserURL: process.env.OG_MAINNET_EXPLORER_URL || "",
-              },
-            },
-          ]
-        : []),
+      {
+        network: "0g-mainnet",
+        chainId: mainnetChainID || 16661,
+        urls: {
+          apiURL: process.env.OG_MAINNET_EXPLORER_API_URL || "https://chainscan.0g.ai/api",
+          browserURL: process.env.OG_MAINNET_EXPLORER_URL || "https://chainscan.0g.ai",
+        },
+      },
     ],
   },
   gasReporter: {

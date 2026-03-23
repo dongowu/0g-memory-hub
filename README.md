@@ -111,7 +111,7 @@ ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
 ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
 ORCH_CHAIN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 ORCH_CHAIN_PRIVATE_KEY=0x...
-ORCH_CHAIN_ID=16601
+ORCH_CHAIN_ID=16602
 ORCH_HTTP_ADDR=127.0.0.1:8080
 ```
 
@@ -119,6 +119,7 @@ ORCH_HTTP_ADDR=127.0.0.1:8080
 
 ```bash
 OG_CHAIN_RPC=https://evmrpc-testnet.0g.ai
+OG_TESTNET_CHAIN_ID=16602
 PRIVATE_KEY=0x...
 ```
 
@@ -202,9 +203,12 @@ This means `/health` can now return `503` not only when a required dependency is
 ### Contract
 
 ```bash
+npm run preflight:testnet
 npx hardhat compile
 npx hardhat test test/MemoryAnchor.js
 npx hardhat run scripts/deploy.js --network 0g-testnet
+npm run deploy:proof
+npm run evidence:testnet
 ```
 
 `scripts/deploy.js` now deploys `MemoryAnchor` by default. To deploy the legacy compatibility contract instead:
@@ -212,6 +216,17 @@ npx hardhat run scripts/deploy.js --network 0g-testnet
 ```bash
 CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
 ```
+
+When `RUN_ANCHOR_PROOF=1` (or `npm run deploy:proof`) is enabled, the deploy script also:
+
+- submits one sample `anchorCheckpoint(...)` transaction,
+- reads the checkpoint back from chain,
+- prints explorer-ready transaction links when configured,
+- writes deployment metadata to `deployments/<network>/MemoryAnchor.latest.json`.
+
+`npm run preflight:testnet` prints the exact environment and orchestrator exports needed before a live 0G Galileo deployment.
+
+`npm run evidence:testnet` converts the latest deployment artifact JSON into a judge-facing markdown file under `docs/evidence/`.
 
 ## Live Evidence
 

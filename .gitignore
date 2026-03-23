@@ -16,4 +16,6 @@ build/
 .cache/
 artifacts/
 cache/
+deployments/hardhat/
+deployments/localhost/
 *.log

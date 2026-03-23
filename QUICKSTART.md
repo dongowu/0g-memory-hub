@@ -28,7 +28,7 @@ export ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
 export ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
 export ORCH_CHAIN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 export ORCH_CHAIN_PRIVATE_KEY=0x...
-export ORCH_CHAIN_ID=16601
+export ORCH_CHAIN_ID=16602
 export ORCH_HTTP_ADDR=127.0.0.1:8080
 ```
 
@@ -113,10 +113,21 @@ Expected output includes:
 ## 7. Compile contract and deploy
 
 ```bash
+npm run preflight:testnet
 npx hardhat compile
 npx hardhat test test/MemoryAnchor.js
 npx hardhat run scripts/deploy.js --network 0g-testnet
+npm run deploy:proof
+npm run evidence:testnet
 ```
+
+`npm run deploy:proof` is the preferred judge-evidence path when credentials are configured. It deploys `MemoryAnchor`, submits one sample `anchorCheckpoint(...)` transaction, reads it back, and writes:
+
+```bash
+deployments/0g-testnet/MemoryAnchor.latest.json
+```
+
+`npm run evidence:testnet` then converts that JSON artifact into a markdown evidence file you can attach in the repo and quote in HackQuest materials.
 
 Optionally deploy legacy contract:
 
