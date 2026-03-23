@@ -93,7 +93,7 @@
 - [x] Demo 路径已存在
 - [x] Evidence 文档已存在
 - [x] 可说明 0G 组件用途
-- [ ] 补一个最终版“提交摘要”段落到 README 顶部（建议）
+- [x] README 顶部已补 judge-facing 提交摘要
 - [ ] 补主网地址 / Explorer 链接到 README（等部署后）
 - [ ] 补 Demo 视频链接到 README（等录制后）
 
@@ -158,7 +158,7 @@
 | 主网 Explorer | ❌ | 还缺 |
 | Demo 视频 | ❌ | 还缺 |
 | X/Twitter 推文 | ❌ | 还缺 |
-| HackQuest 表单最终文案 | ⚠️ | 可以现在整理 |
+| HackQuest 表单最终文案 | ✅ | `docs/submission/2026-03-23-hackquest-form-answers.md` |
 
 ---
 
@@ -216,9 +216,8 @@
 
 最推荐下一步：
 
-- **直接准备 HackQuest 表单最终文案 + Demo 视频脚本**
+- **补主网部署和 Explorer 证明**
 
 其次：
 
-- **补主网部署和 Explorer 证明**
-
+- **录制 Demo 视频并发布 X/Twitter 推文**
