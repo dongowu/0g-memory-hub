@@ -231,11 +231,19 @@ npm run deploy:proof
 npm run evidence:testnet
 ```
 
+After deployment, point the orchestrator at the deployed anchor contract:
+
+```bash
+export ORCH_CHAIN_CONTRACT_ADDRESS=$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('deployments/0g-testnet/MemoryAnchor.latest.json','utf8'));process.stdout.write(d.contractAddress)")
+```
+
 `scripts/deploy.js` now deploys `MemoryAnchor` by default. To deploy the legacy compatibility contract instead:
 
 ```bash
 CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
 ```
+
+> `MemoryChain` is legacy compatibility only. For the hackathon submission and judge demo, always use `MemoryAnchor`.
 
 When `RUN_ANCHOR_PROOF=1` (or `npm run deploy:proof`) is enabled, the deploy script also:
 

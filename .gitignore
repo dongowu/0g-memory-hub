@@ -19,4 +19,5 @@ cache/
 deployments/hardhat/
 deployments/localhost/
 .wallets/
+docs/evidence/*hardhat-memory-anchor-proof.md
 *.log

@@ -1,131 +1,112 @@
-# GitHub 提交指南
+# GitHub / HackQuest 提交指南
 
-## 仓库创建步骤
+> 当前黑客松主线请以 **Go orchestrator + Rust runtime + MemoryAnchor** 为准：
+> `apps/orchestrator-go` + `rust/memory-core` + `contracts/MemoryAnchor.sol`
 
-### 1. 在 GitHub 上创建私有仓库
+## 1. 当前已验证的 0G 证据
 
-1. 访问 https://github.com/new
-2. 填写信息：
-   - **Repository name**: `0g-memory-hub`
-   - **Description**: `AI Agent Eternal Memory System on 0G`
-   - **Visibility**: `Private` (先设为私有)
-   - **Initialize**: 不勾选任何选项（我们已有本地代码）
-3. 点击 "Create repository"
+- Galileo testnet contract: `0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- Contract explorer: `https://chainscan-galileo.0g.ai/address/0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- Deployment tx: `0x114fd7ebc9f2fcb9aab6780cafbd8964399fcd5b22ba13107a348f0ac5ecd72c`
+- Anchor proof tx: `0xa794dd7aedcf7b7c349005af620f29d8a36557c7b7973f91e358e31287fad1db`
+- Deployment artifact: `deployments/0g-testnet/MemoryAnchor.latest.json`
+- Judge-facing proof doc: `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
 
-### 2. 配置本地 Git 远程
+## 2. 提交前最重要的判断标准
 
-复制仓库 URL 后，在本地执行：
+评委真正会看的是：
 
-```bash
-cd D:/ownCode/game/0GMemoryHub
+1. **是否真的用了 0G**
+2. **是否能现场跑通 / 复核**
+3. **文档和 Demo 是否清楚**
+4. **仓库是否像一个认真维护的产品，而不是拼凑 demo**
 
-# 添加远程
-git remote add origin https://github.com/dongowu/0g-memory-hub.git
+所以提交主线应始终围绕：
 
-# 验证
-git remote -v
-```
+- `README.md`
+- `QUICKSTART.md`
+- `docs/submission/2026-03-23-hackquest-form-answers.md`
+- `docs/submission/2026-03-23-hackquest-final-copy.md`
+- `docs/demo/3min-judge-flow.md`
 
-### 3. 推送代码到 GitHub
+## 3. 仓库提交检查清单
 
-```bash
-# 推送主分支
-git branch -M main
-git push -u origin main
-```
+- [ ] GitHub 仓库可公开访问
+- [ ] `main` 已推送最新代码
+- [ ] README / QUICKSTART 与当前实现一致
+- [x] 已有真实 Galileo 测试网部署证据
+- [x] 已有 Explorer 可核验链接
+- [ ] Demo 视频链接已补齐
+- [ ] X / Twitter 推文链接已补齐
+- [ ] 如主办方最终强制要求主网，再补主网合约地址与 Explorer
 
-### 4. 最终提交前转为公开
-
-在黑客松提交前（5月9日前），将仓库改为公开：
-1. 进入仓库 Settings
-2. 找到 "Danger Zone"
-3. 点击 "Change visibility"
-4. 选择 "Public"
-
-## 提交要求检查清单
-
-在提交到黑客松前，确保满足以下所有条件：
-
-- [ ] 代码已推送到 GitHub
-- [ ] 仓库已转为 Public
-- [ ] 有实质性的 commit 记录（至少 5+ commits）
-- [ ] 0G 主网合约已部署
-- [ ] 合约地址已在 README 中记录
-- [ ] Demo 视频已录制（≤3分钟）
-- [ ] 在 X (Twitter) 发布了项目推文
-- [ ] 所有 commit 都是 dongowu 账户提交
-
-## 后续开发流程
-
-每次开发完成后：
+## 4. 日常提交流程
 
 ```bash
-# 查看变更
 git status
-
-# 添加文件
 git add <files>
-
-# 提交
-git commit -m "描述性的提交信息"
-
-# 推送
+git commit -m "feat: ..."
 git push origin main
 ```
 
-## 0G 主网部署
-
-### 1. 获取 0G 主网信息
-
-- RPC URL: https://rpc.0g.ai (待确认)
-- Chain ID: (待确认)
-- Explorer: https://explorer.0g.ai (待确认)
-
-### 2. 部署合约
-
-使用 Foundry 或 Hardhat：
+如果只是同步当前主分支：
 
 ```bash
-# 使用 Foundry
-forge create contracts/MemoryChain.sol:MemoryChain \
-  --rpc-url <0G_RPC_URL> \
-  --private-key <YOUR_PRIVATE_KEY>
+git push origin main
 ```
 
-### 3. 记录合约地址
+## 5. HackQuest 表单推荐填写口径
 
-部署后，将合约地址更新到：
-- README.md 中的 "0G Chain Integration" 部分
-- 环境变量 `CONTRACT_ADDRESS`
+### 项目名
 
-## 推文模板
+`0G Memory Hub`
 
-在 X (Twitter) 上发布：
+### 一句话描述（≤30 words）
 
-```
-🚀 Building eternal memory for AI agents on @0G_labs!
+OpenClaw-style agent memory runtime on 0G that persists checkpoints to 0G Storage and anchors workflow proofs on 0G Chain via MemoryAnchor.
 
-0G Memory Hub: Immutable, verifiable, on-chain memory system
-- Upload to 0G Storage with content addressing
-- Anchor on 0G Chain for verifiability
-- Concurrent uploads with Rust + Tokio
+### 代码仓库
+
+`https://github.com/dongowu/0g-memory-hub`
+
+> 提交前确认仓库已设为 Public。
+
+### 0G 集成证明
+
+- Contract address: `0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- Explorer: `https://chainscan-galileo.0g.ai/address/0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- Proof tx: `https://chainscan-galileo.0g.ai/tx/0xa794dd7aedcf7b7c349005af620f29d8a36557c7b7973f91e358e31287fad1db`
+
+### Demo / Tweet 待补字段
+
+- Demo video: `TODO`
+- X post: `TODO`
+- Mainnet proof: `TODO`（仅当主办方最终明确要求）
+
+## 6. 推荐提交流程
+
+1. 确认 `origin/main` 是最新
+2. 确认仓库为 Public
+3. 用 `docs/submission/2026-03-23-hackquest-form-answers.md` 填表
+4. 用 `docs/demo/3min-judge-flow.md` 录制 3 分钟视频
+5. 发布 X 推文并把链接填回提交材料
+
+## 7. 推荐 X 推文模板
+
+```text
+Building OpenClaw-style agent memory on @0G_labs
+
+0G Memory Hub gives AI workflows durable checkpoints, recovery after crashes, and verifiable on-chain memory proofs.
 
 Demo: [VIDEO_LINK]
-Code: https://github.com/dongowu/0g-memory-hub
+Repo: https://github.com/dongowu/0g-memory-hub
 
 #0GHackathon #BuildOn0G @0G_labs @0g_CN @HackQuest_
 ```
 
-## 常见问题
+## 8. 安全提醒
 
-**Q: 如何更改仓库可见性？**
-A: Settings → Danger Zone → Change visibility
-
-**Q: 如何确保只有我的账户提交代码？**
-A: 所有 commit 都已配置为 dongowu 账户，git 会自动使用该身份
-
-**Q: 如何查看 commit 历史？**
-A: `git log --oneline`
-
-**Q: 如何撤销最后一个 commit？**
-A: `git reset --soft HEAD~1` (保留更改) 或 `git reset --hard HEAD~1` (丢弃更改)
+- **不要提交私钥**
+- 任何 `.env` / 本地钱包文件都不要入库
+- 当前仓库已忽略 `.wallets/`
+- 由于测试私钥曾被明文暴露在聊天里，建议赛后尽快停用并更换该测试钱包

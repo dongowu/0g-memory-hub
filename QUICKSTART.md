@@ -141,6 +141,12 @@ npm run deploy:proof
 npm run evidence:testnet
 ```
 
+Then wire the deployed anchor back into the orchestrator:
+
+```bash
+export ORCH_CHAIN_CONTRACT_ADDRESS=$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('deployments/0g-testnet/MemoryAnchor.latest.json','utf8'));process.stdout.write(d.contractAddress)")
+```
+
 `npm run deploy:proof` is the preferred judge-evidence path when credentials are configured. It deploys `MemoryAnchor`, submits one sample `anchorCheckpoint(...)` transaction, reads it back, and writes:
 
 ```bash
@@ -154,6 +160,8 @@ Optionally deploy legacy contract:
 ```bash
 CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
 ```
+
+> `MemoryChain` is kept only for legacy compatibility. The judge/demo/submission path should use `MemoryAnchor`.
 
 ## 8. Judge demo script
 

@@ -1,5 +1,21 @@
 # 0G Memory Hub - 项目执行总结
 
+> ⚠️ **Legacy snapshot notice**
+> 这个文件主要保留早期原型阶段的记录，已不再代表当前黑客松主线。
+> 当前提交请以以下文档为准：
+>
+> - `README.md`
+> - `QUICKSTART.md`
+> - `0G_INTEGRATION.md`
+> - `docs/submission/2026-03-23-hackquest-form-answers.md`
+> - `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
+>
+> 当前 canonical implementation:
+>
+> - Go orchestrator: `apps/orchestrator-go`
+> - Rust runtime: `rust/memory-core`
+> - Canonical contract: `contracts/MemoryAnchor.sol`
+
 ## ✅ 已完成的工作
 
 ### 1. 项目初始化

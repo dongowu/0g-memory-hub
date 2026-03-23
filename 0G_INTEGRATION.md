@@ -1,254 +1,165 @@
-# 0G 集成指南
+# 0G 集成指南（当前黑客松主线）
 
-## 0G 组件使用说明
+> 本文档只描述当前 judge-facing 集成路径。
+> **Canonical path = `MemoryAnchor` + Galileo + Go orchestrator + Rust runtime**
+> 旧的 `MemoryChain` 原型仅作兼容保留，不作为本次提交主路径。
 
-本项目集成了 0G 的两个核心组件：**0G Storage** 和 **0G Chain**。
+## 1. 当前架构
 
-### 1. 0G Storage 集成
+本项目面向 **Agentic Infrastructure & OpenClaw Lab** 赛道，核心目标是：
 
-**位置**: `src/storage/mod.rs`
+1. 接收 OpenClaw / agent workflow 事件
+2. 由 Rust runtime 构建可恢复的 checkpoint
+3. 把 checkpoint 持久化到 0G Storage
+4. 把 `workflowId + stepIndex + rootHash + cidHash` 锚定到 0G Chain
+5. 在服务崩溃后恢复运行，并让评委可通过 Explorer 验证链上证据
 
-**功能**:
-- 文件上传到 0G Storage
-- 获取内容标识符 (CID)
-- 文件下载和验证
-- Merkle 证明验证
+当前主线目录：
 
-**API 调用**:
+- Go orchestrator: `apps/orchestrator-go`
+- Rust runtime: `rust/memory-core`
+- 0G Storage integration: `apps/orchestrator-go/internal/ogstorage`
+- 0G Chain integration: `apps/orchestrator-go/internal/ogchain`
+- Contract: `contracts/MemoryAnchor.sol`
 
-```rust
-// 初始化存储客户端
-let storage_config = StorageConfig {
-    rpc_url: "https://testnet-rpc.0g.ai".to_string(),
-    indexer_url: "https://testnet-indexer.0g.ai".to_string(),
-    private_key: "0x...".to_string(),
-};
-let client = StorageClient::new(storage_config);
+## 2. 0G Storage 集成
 
-// 上传文件
-let result = client.upload_file("memory.json").await?;
-println!("CID: {}", result.cid);
+### 代码位置
 
-// 下载文件
-client.download_file(&cid, "output.json").await?;
+- `apps/orchestrator-go/internal/ogstorage/client.go`
+- `apps/orchestrator-go/internal/ogstorage/direct_upload.go`
+- `apps/orchestrator-go/internal/ogstorage/direct_live.go`
+- `apps/orchestrator-go/internal/ogstorage/direct_fallback.go`
 
-// 验证完整性
-let is_valid = client.verify_file(&cid, "output.json").await?;
-```
+### 做了什么
 
-**解决的问题**:
-- ✅ 持久化存储：AI 代理的记忆数据永久保存
-- ✅ 内容寻址：通过 CID 确保数据不可篡改
-- ✅ 数据可用性：0G DA 层保证数据分片的可靠分发
-- ✅ 完整性验证：Merkle 证明确保下载的数据完整
+- 把 runtime 生成的 checkpoint JSON 上传到 0G Storage
+- 记录 `rootHash` / `txHash`
+- 支持读回 checkpoint 以便 hydrate / replay
+- 当标准 indexer 路径不稳定时，走 direct fallback 路径保证 demo 可继续
 
-### 2. 0G Chain 集成
+### 解决的问题
 
-**位置**: `src/chain/mod.rs`
+- Agent memory 不再只存在进程内存里
+- checkpoint 具备内容寻址和外部可验证性
+- Demo 时即使服务重启，也能从已持久化 checkpoint 恢复
 
-**智能合约**: `contracts/MemoryChain.sol`
+## 3. 0G Chain 集成
 
-**功能**:
-- 在链上记录内存指针 (CID)
-- 维护完整的内存历史
-- 验证代理身份
-- 查询内存链
+### 代码位置
 
-**合约接口**:
+- `apps/orchestrator-go/internal/ogchain/client.go`
+- `contracts/MemoryAnchor.sol`
 
-```solidity
-// 设置内存头指针
-function setMemoryHead(bytes32 cid) external
+### 合约接口
 
-// 获取当前内存头
-function getMemoryHead(address agent) external view returns (bytes32)
+当前提交主线使用 `MemoryAnchor`：
 
-// 获取完整历史
-function getMemoryHistory(address agent) external view returns (bytes32[] memory)
+- `anchorCheckpoint(bytes32 workflowId, uint64 stepIndex, bytes32 rootHash, bytes32 cidHash)`
+- `getLatestCheckpoint(bytes32 workflowId)`
+- `getCheckpointCount(bytes32 workflowId)`
+- `getCheckpointAt(bytes32 workflowId, uint256 index)`
 
-// 获取特定历史记录
-function getMemoryAt(address agent, uint256 index) external view returns (bytes32)
-```
+### 解决的问题
 
-**Rust 调用示例**:
+- 把 workflow checkpoint 的关键摘要上链
+- 允许评委通过 Explorer 独立核验
+- 让“可恢复 memory”变成“可恢复 + 可验证 memory”
 
-```rust
-// 初始化链客户端
-let chain_config = ChainConfig {
-    rpc_url: "https://testnet-chain-rpc.0g.ai".to_string(),
-    contract_address: "0x...".to_string(),
-    private_key: "0x...".to_string(),
-    chain_id: 1,
-};
-let client = ChainClient::new(chain_config);
+## 4. OpenClaw / 服务层集成
 
-// 设置内存指针
-let result = client.set_memory_head(agent_addr, &cid).await?;
-println!("TX Hash: {}", result.tx_hash);
+### 代码位置
 
-// 获取当前指针
-let head = client.get_memory_head(agent_addr).await?;
+- `apps/orchestrator-go/internal/openclaw/adapter.go`
+- `apps/orchestrator-go/internal/workflow/service.go`
+- `apps/orchestrator-go/internal/server/http.go`
 
-// 获取历史
-let history = client.get_memory_history(agent_addr).await?;
-```
+### HTTP 能力
 
-**解决的问题**:
-- ✅ 不可篡改性：链上记录无法修改
-- ✅ 可验证性：任何人都可以验证内存链的完整性
-- ✅ 审计追踪：完整的历史记录便于审计
-- ✅ 身份验证：合约确保只有代理所有者可以更新指针
+当前服务提供：
 
-## 0G 主网部署
+- `POST /v1/openclaw/ingest`
+- `POST /v1/openclaw/ingest/batch`
+- `GET /v1/workflows/{id}`
+- `POST /v1/workflows/{id}/resume`
+- `GET /v1/workflows/{id}/replay`
+- `GET /v1/openclaw/runs/{id}/context`
+- `GET /v1/openclaw/runs/{id}/checkpoint/latest`
+- `POST /v1/openclaw/runs/{id}/hydrate`
+- `GET /v1/openclaw/runs/{id}/trace`
 
-### 前置条件
+这意味着项目不是一个“单点上传 demo”，而是一个可连续运行、可摄入事件、可恢复、可审计的 agent memory service。
 
-1. 获取 0G 主网 RPC 端点
-2. 准备部署账户（需要 0G 主网代币用于 Gas）
-3. 安装 Foundry 或 Hardhat
+## 5. 当前网络参数
 
-### 部署步骤
+### Galileo testnet
 
-#### 使用 Foundry
+- Chain ID: `16602`
+- RPC: `https://evmrpc-testnet.0g.ai`
+- Explorer: `https://chainscan-galileo.0g.ai`
+
+### Mainnet
+
+- Chain ID: `16661`
+- RPC: `https://evmrpc.0g.ai`
+- Explorer: `https://chainscan.0g.ai`
+
+## 6. 当前推荐环境变量
+
+### Orchestrator
 
 ```bash
-# 1. 安装 Foundry
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-
-# 2. 初始化项目
-forge init --no-git
-
-# 3. 复制合约
-cp contracts/MemoryChain.sol src/
-
-# 4. 部署
-forge create src/MemoryChain.sol:MemoryChain \
-  --rpc-url https://rpc.0g.ai \
-  --private-key 0x... \
-  --etherscan-api-key <API_KEY> \
-  --verify
+export ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
+export ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
+export ORCH_CHAIN_CONTRACT_ADDRESS=0x...
+export ORCH_CHAIN_PRIVATE_KEY=0x...
+export ORCH_CHAIN_ID=16602
+export ORCH_RUNTIME_BINARY_PATH=/path/to/memory-core-rpc
 ```
 
-#### 使用 Hardhat
+### Hardhat / deploy
 
 ```bash
-# 1. 初始化项目
-npx hardhat init
-
-# 2. 配置 hardhat.config.js
-# 添加 0G 网络配置
-
-# 3. 部署
-npx hardhat run scripts/deploy.js --network 0g-mainnet
+export OG_CHAIN_RPC=https://evmrpc-testnet.0g.ai
+export OG_TESTNET_CHAIN_ID=16602
+export OG_TESTNET_EXPLORER_URL=https://chainscan-galileo.0g.ai
+export PRIVATE_KEY=0x...
 ```
 
-### 验证部署
-
-部署后，在 0G Explorer 中验证：
-
-```
-https://explorer.0g.ai/address/<CONTRACT_ADDRESS>
-```
-
-## 0G 测试网配置
-
-### 测试网信息
-
-| 参数 | 值 |
-|------|-----|
-| RPC URL | https://testnet-rpc.0g.ai |
-| Chain ID | (待确认) |
-| Explorer | https://testnet-explorer.0g.ai |
-| 水龙头 | https://testnet-faucet.0g.ai |
-
-### 获取测试币
-
-1. 访问 https://testnet-faucet.0g.ai
-2. 输入钱包地址
-3. 领取测试币
-
-### 环境变量配置
+## 7. 当前推荐部署 / 证据命令
 
 ```bash
-# .env 文件
-OG_STORAGE_RPC=https://testnet-rpc.0g.ai
-OG_CHAIN_RPC=https://testnet-chain-rpc.0g.ai
-PRIVATE_KEY=0x...
-CONTRACT_ADDRESS=0x...
+npm run wallet:new
+npm run preflight:testnet
+npx hardhat compile
+npx hardhat test test/MemoryAnchor.js
+npm run deploy:proof
+npm run evidence:testnet
 ```
 
-## 性能指标
+输出物：
 
-### 0G Storage
+- `deployments/0g-testnet/MemoryAnchor.latest.json`
+- `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
 
-- **吞吐量**: 支持高并发上传
-- **延迟**: 文件上传至 DA 确认 < 2 秒
-- **可靠性**: 纠删编码 + 多副本保证
+## 8. 已验证的真实链上证据
 
-### 0G Chain
+- Contract: `0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- Contract explorer: `https://chainscan-galileo.0g.ai/address/0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- Deployment tx: `0x114fd7ebc9f2fcb9aab6780cafbd8964399fcd5b22ba13107a348f0ac5ecd72c`
+- Anchor tx: `0xa794dd7aedcf7b7c349005af620f29d8a36557c7b7973f91e358e31287fad1db`
 
-- **TPS**: 11,000+ TPS (每分片)
-- **确认时间**: < 1 秒
-- **Gas 费用**: 极低（高吞吐系统）
+## 9. 提交口径建议
 
-## 故障排查
+如果评委问“你们到底用了 0G 什么”：
 
-### 上传失败
+可以直接回答：
 
-```
-错误: "RPC connection failed"
-解决: 检查 RPC URL 是否正确，网络连接是否正常
-```
+> We use 0G Storage to persist workflow checkpoints and 0G Chain to anchor workflow proofs through MemoryAnchor. The Go service ingests OpenClaw-style events, the Rust runtime builds deterministic checkpoints, and the chain proof makes recovery externally verifiable.
 
-### 合约交互失败
+## 10. 注意事项
 
-```
-错误: "Insufficient balance"
-解决: 确保账户有足够的 0G 代币用于 Gas
-```
-
-### CID 验证失败
-
-```
-错误: "Merkle proof verification failed"
-解决: 确保文件未被修改，重新下载并验证
-```
-
-## 最佳实践
-
-1. **私钥管理**
-   - 使用环境变量存储私钥
-   - 不要在代码中硬编码私钥
-   - 使用硬件钱包进行主网交易
-
-2. **错误处理**
-   - 实现重试机制（exponential backoff）
-   - 记录所有交易哈希用于追踪
-   - 验证链上状态后再继续
-
-3. **性能优化**
-   - 使用并发上传提高吞吐量
-   - 批量处理多个内存更新
-   - 缓存常用的 CID 和指针
-
-4. **安全性**
-   - 对敏感内存加密
-   - 验证所有下载的文件
-   - 定期审计链上历史
-
-## 资源链接
-
-- [0G 官方文档](https://docs.0g.ai/)
-- [0G Storage SDK](https://github.com/0glabs/0g-storage-client)
-- [0G Chain RPC](https://rpc.0g.ai)
-- [0G Explorer](https://explorer.0g.ai)
-- [0G Discord](https://discord.gg/0g)
-
-## 支持
-
-遇到问题？
-
-1. 查看 [0G 文档](https://docs.0g.ai/)
-2. 在 [GitHub Issues](https://github.com/dongowu/0g-memory-hub/issues) 提问
-3. 加入 [0G Discord](https://discord.gg/0g) 社区
+- `MemoryAnchor` 是当前 canonical 合约
+- `MemoryChain` 仅是早期原型兼容资产，不要作为主提交路径引用
+- 不要把私钥提交进仓库
+- Judge-facing 文档请优先引用 `README.md`、`QUICKSTART.md`、`docs/submission/*`、`docs/evidence/*`
