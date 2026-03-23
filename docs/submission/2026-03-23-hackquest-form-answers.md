@@ -115,10 +115,16 @@ The demo shows:
 
 ## 11. Mainnet / Explorer / Demo / Tweet Fields
 
-Replace these placeholders before final submission:
+Current verified Galileo testnet deployment:
+
+- **Testnet contract address:** `0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- **0G Explorer link:** `https://chainscan-galileo.0g.ai/address/0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- **Anchor proof tx:** `https://chainscan-galileo.0g.ai/tx/0xa794dd7aedcf7b7c349005af620f29d8a36557c7b7973f91e358e31287fad1db`
+- **Deployment proof doc:** `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
+
+Still replace these placeholders before final submission if required:
 
 - **Mainnet contract address:** `TODO`
-- **0G Explorer link:** `TODO`
 - **Demo video link:** `TODO`
 - **X / Twitter post link:** `TODO`
 

@@ -60,9 +60,11 @@
 - [x] 已有合约代码
   - `contracts/MemoryAnchor.sol`
 - [x] 已有测试网 / Galileo 证据
-  - 示例证据中的合约地址：`0xc164d2f784f0e23bf380e9367b76e42dfa3c45e7`
-- [ ] **主网合约地址**
-- [ ] **主网 Explorer 链接**
+  - 最新 Galileo 部署地址：`0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+  - Explorer：`https://chainscan-galileo.0g.ai/address/0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+  - Proof doc：`docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
+- [ ] **主网合约地址**（如最终提交要求主网）
+- [ ] **主网 Explorer 链接**（如最终提交要求主网）
 - [ ] 提交材料里明确说明“调用了哪个 0G API/SDK、解决什么问题”
 
 > 注意：当前最像正式提交 blocker 的是 **“主网证明”**，而不是代码能力。

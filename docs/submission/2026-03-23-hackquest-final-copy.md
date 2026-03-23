@@ -119,15 +119,21 @@ Without that combination, the system would be only a local runtime and not a cre
 
 ---
 
-## 10. Fields to Fill Before Submission
+## 10. Current On-Chain Deployment Evidence
 
-- **Mainnet contract address:** `TODO`
-- **0G Explorer link:** `TODO`
+- **Galileo testnet contract address:** `0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- **0G Explorer link:** `https://chainscan-galileo.0g.ai/address/0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9`
+- **Anchor proof tx:** `https://chainscan-galileo.0g.ai/tx/0xa794dd7aedcf7b7c349005af620f29d8a36557c7b7973f91e358e31287fad1db`
+- **Deployment proof doc:** `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
+
+## 11. Remaining Submission Placeholders
+
+- **Mainnet contract address (if required):** `TODO`
 - **Demo video link:** `TODO`
 - **X / Twitter post link:** `TODO`
 
 ---
 
-## 11. Suggested 30-Second Pitch
+## 12. Suggested 30-Second Pitch
 
 We built a durable memory layer for OpenClaw-style agent workflows on 0G. The Go service accepts workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and 0G Chain anchors verification metadata. So instead of an agent losing its context when a process dies, the workflow can be replayed, resumed, and externally verified.

@@ -4,6 +4,8 @@
   "description": "AI Agent Eternal Memory System on 0G",
   "main": "index.js",
   "scripts": {
+    "wallet:new": "node scripts/generate_testnet_wallet.js",
+    "wallet:new:save": "node scripts/generate_testnet_wallet.js --save",
     "preflight:testnet": "node scripts/check_testnet_env.js",
     "compile": "hardhat compile",
     "test:contracts": "hardhat test test/MemoryAnchor.js",

@@ -18,4 +18,5 @@ artifacts/
 cache/
 deployments/hardhat/
 deployments/localhost/
+.wallets/
 *.log

@@ -123,6 +123,25 @@ OG_TESTNET_CHAIN_ID=16602
 PRIVATE_KEY=0x...
 ```
 
+### Need a fresh testnet wallet?
+
+Generate one locally:
+
+```bash
+npm run wallet:new
+```
+
+Generate and also save it to `.wallets/` locally:
+
+```bash
+npm run wallet:new:save
+```
+
+Then fund the printed address from:
+
+- https://faucet.0g.ai
+- https://cloud.google.com/application/web3/faucet/0g/galileo
+
 ## Build and Test
 
 ### Rust core
@@ -203,6 +222,7 @@ This means `/health` can now return `503` not only when a required dependency is
 ### Contract
 
 ```bash
+npm run wallet:new
 npm run preflight:testnet
 npx hardhat compile
 npx hardhat test test/MemoryAnchor.js
@@ -236,6 +256,8 @@ When `RUN_ANCHOR_PROOF=1` (or `npm run deploy:proof`) is enabled, the deploy scr
   `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
 - Live HTTP readiness proof:
   `docs/evidence/2026-03-23-live-http-readiness-proof.md`
+- Live Galileo deployment proof:
+  `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
 - Reproduction scripts:
   - `node scripts/live_storage_flow_proof.cjs`
   - `OG_STORAGE_ROOT=<root> node scripts/anchor_storage_root.cjs`

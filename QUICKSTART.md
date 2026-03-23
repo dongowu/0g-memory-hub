@@ -34,6 +34,25 @@ export ORCH_HTTP_ADDR=127.0.0.1:8080
 
 If you only want a local demo without live 0G calls, `ORCH_STORAGE_RPC_URL` can stay set but you should skip `workflow step`.
 
+### No testnet wallet yet?
+
+Generate one locally:
+
+```bash
+npm run wallet:new
+```
+
+Or generate and save it locally:
+
+```bash
+npm run wallet:new:save
+```
+
+Then fund the printed address from:
+
+- https://faucet.0g.ai
+- https://cloud.google.com/application/web3/faucet/0g/galileo
+
 ## 3. Run orchestrator checks
 
 ```bash
@@ -113,6 +132,7 @@ Expected output includes:
 ## 7. Compile contract and deploy
 
 ```bash
+npm run wallet:new
 npm run preflight:testnet
 npx hardhat compile
 npx hardhat test test/MemoryAnchor.js
