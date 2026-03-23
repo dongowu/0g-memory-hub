@@ -1,12 +1,24 @@
 require("@nomicfoundation/hardhat-toolbox");
-require("@nomiclabs/hardhat-ethers");
-require("@nomiclabs/hardhat-etherscan");
-require("hardhat-gas-reporter");
-require("solidity-coverage");
 require("dotenv").config();
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000000";
-const RPC_URL = process.env.OG_CHAIN_RPC || "https://testnet-rpc.0g.ai";
+const TESTNET_RPC_URL = process.env.OG_CHAIN_RPC || "https://evmrpc-testnet.0g.ai";
+const MAINNET_RPC_URL = process.env.OG_MAINNET_RPC || "https://rpc.0g.ai";
+const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+
+function configuredAccounts() {
+  return PRIVATE_KEY ? [PRIVATE_KEY] : [];
+}
+
+function configuredChainID(value) {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const testnetChainID = configuredChainID(process.env.OG_TESTNET_CHAIN_ID || "16601");
+const mainnetChainID = configuredChainID(process.env.OG_MAINNET_CHAIN_ID);
 
 module.exports = {
   solidity: {
@@ -20,14 +32,14 @@ module.exports = {
   },
   networks: {
     "0g-testnet": {
-      url: RPC_URL,
-      accounts: [PRIVATE_KEY],
-      chainId: 1, // Update with actual 0G Chain ID
+      url: TESTNET_RPC_URL,
+      accounts: configuredAccounts(),
+      chainId: testnetChainID,
     },
     "0g-mainnet": {
-      url: "https://rpc.0g.ai", // Update with mainnet RPC
-      accounts: [PRIVATE_KEY],
-      chainId: 1, // Update with actual mainnet Chain ID
+      url: MAINNET_RPC_URL,
+      accounts: configuredAccounts(),
+      ...(mainnetChainID ? { chainId: mainnetChainID } : {}),
     },
     hardhat: {
       chainId: 1337,
@@ -38,26 +50,30 @@ module.exports = {
   },
   etherscan: {
     apiKey: {
-      "0g-testnet": "0g", // Placeholder
-      "0g-mainnet": "0g", // Placeholder
+      "0g-testnet": process.env.OG_TESTNET_EXPLORER_API_KEY || "0g",
+      "0g-mainnet": process.env.OG_MAINNET_EXPLORER_API_KEY || "0g",
     },
     customChains: [
       {
         network: "0g-testnet",
-        chainId: 1,
+        chainId: testnetChainID || 16601,
         urls: {
-          apiURL: "https://testnet-explorer.0g.ai/api",
-          browserURL: "https://testnet-explorer.0g.ai",
+          apiURL: process.env.OG_TESTNET_EXPLORER_API_URL || "https://chainscan-galileo.0g.ai/api",
+          browserURL: process.env.OG_TESTNET_EXPLORER_URL || "https://chainscan-galileo.0g.ai",
         },
       },
-      {
-        network: "0g-mainnet",
-        chainId: 1,
-        urls: {
-          apiURL: "https://explorer.0g.ai/api",
-          browserURL: "https://explorer.0g.ai",
-        },
-      },
+      ...(mainnetChainID
+        ? [
+            {
+              network: "0g-mainnet",
+              chainId: mainnetChainID,
+              urls: {
+                apiURL: process.env.OG_MAINNET_EXPLORER_API_URL || "",
+                browserURL: process.env.OG_MAINNET_EXPLORER_URL || "",
+              },
+            },
+          ]
+        : []),
     ],
   },
   gasReporter: {

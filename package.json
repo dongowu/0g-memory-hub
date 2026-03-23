@@ -5,8 +5,10 @@
   "main": "index.js",
   "scripts": {
     "compile": "hardhat compile",
+    "test:contracts": "hardhat test test/MemoryAnchor.js",
     "deploy": "hardhat run scripts/deploy.js --network 0g-testnet",
     "deploy:mainnet": "hardhat run scripts/deploy.js --network 0g-mainnet",
+    "deploy:legacy": "CONTRACT_NAME=MemoryChain hardhat run scripts/deploy.js --network 0g-testnet",
     "verify": "hardhat verify",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
@@ -23,6 +25,9 @@
   ],
   "author": "dongowu",
   "license": "MIT",
+  "engines": {
+    "node": ">=20 <25"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^3.0.0",
     "@nomiclabs/hardhat-ethers": "^2.2.3",

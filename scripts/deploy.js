@@ -1,68 +1,73 @@
-// Hardhat deployment script for MemoryChain contract
-// Usage: npx hardhat run scripts/deploy.js --network 0g-testnet
+const hre = require("hardhat");
+
+const EXPLORER_BASE_URLS = {
+  "0g-testnet": process.env.OG_TESTNET_EXPLORER_URL || "https://chainscan-galileo.0g.ai",
+  "0g-mainnet": process.env.OG_MAINNET_EXPLORER_URL || "",
+};
 
 async function main() {
-  console.log("🚀 Deploying MemoryChain contract...\n");
+  const contractName = process.env.CONTRACT_NAME || "MemoryAnchor";
+  const [deployer] = await hre.ethers.getSigners();
+  if (!deployer) {
+    throw new Error("No deployer configured. Set PRIVATE_KEY before deploying to a remote network.");
+  }
 
-  // Get the contract factory
-  const MemoryChain = await ethers.getContractFactory("MemoryChain");
+  console.log(`🚀 Deploying ${contractName}...\n`);
+  console.log(`Network: ${hre.network.name}`);
+  console.log(`Deployer: ${deployer.address}\n`);
 
-  // Deploy the contract
-  console.log("📝 Deploying contract...");
-  const memoryChain = await MemoryChain.deploy();
-  await memoryChain.deployed();
+  const contractFactory = await hre.ethers.getContractFactory(contractName);
+  const contract = await contractFactory.deploy();
+  await contract.waitForDeployment();
+
+  const contractAddress = await contract.getAddress();
+  const deploymentBlock = await hre.ethers.provider.getBlockNumber();
 
   console.log("✅ Contract deployed successfully!");
-  console.log(`   Contract Address: ${memoryChain.address}\n`);
+  console.log(`Contract: ${contractName}`);
+  console.log(`Address: ${contractAddress}`);
+  console.log(`Block: ${deploymentBlock}\n`);
 
-  // Save deployment info
-  const deploymentInfo = {
-    network: hre.network.name,
-    contractAddress: memoryChain.address,
-    deploymentBlock: await ethers.provider.getBlockNumber(),
-    timestamp: new Date().toISOString(),
-  };
+  const explorerBaseURL = EXPLORER_BASE_URLS[hre.network.name];
+  if (explorerBaseURL) {
+    console.log(`Explorer: ${explorerBaseURL.replace(/\/$/, "")}/address/${contractAddress}`);
+  }
 
-  console.log("📋 Deployment Info:");
-  console.log(JSON.stringify(deploymentInfo, null, 2));
+  console.log("\n📋 Deployment Info:");
+  console.log(
+    JSON.stringify(
+      {
+        network: hre.network.name,
+        contractName,
+        contractAddress,
+        deployer: deployer.address,
+        deploymentBlock,
+        timestamp: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
 
-  // Verify on block explorer (if applicable)
-  if (hre.network.name !== "hardhat" && hre.network.name !== "localhost") {
-    console.log("\n⏳ Waiting for block confirmations before verification...");
-    await memoryChain.deployTransaction.wait(5);
+  if (!["hardhat", "localhost"].includes(hre.network.name)) {
+    console.log("\n⏳ Waiting for 5 confirmations before verification...");
+    const deploymentTx = contract.deploymentTransaction();
+    if (deploymentTx) {
+      await deploymentTx.wait(5);
+    }
 
-    console.log("🔍 Verifying contract on block explorer...");
     try {
+      console.log("🔍 Verifying contract on explorer...");
       await hre.run("verify:verify", {
-        address: memoryChain.address,
+        address: contractAddress,
         constructorArguments: [],
       });
       console.log("✅ Contract verified!");
     } catch (error) {
-      console.log("⚠️  Verification failed (this is normal for some networks)");
-      console.log(`   Error: ${error.message}`);
+      console.log("⚠️ Verification skipped or failed.");
+      console.log(`Reason: ${error.message}`);
     }
   }
-
-  // Test the contract
-  console.log("\n🧪 Testing contract functions...");
-
-  const testAgent = "0x1234567890123456789012345678901234567890";
-  const testCID = ethers.utils.formatBytes32String("test_cid_001");
-
-  try {
-    // Note: This will fail if called from a different address
-    // In production, you'd need to use the agent's private key
-    console.log("   (Skipping write test - requires agent's private key)");
-  } catch (error) {
-    console.log(`   Error: ${error.message}`);
-  }
-
-  console.log("\n🎉 Deployment complete!");
-  console.log("\nNext steps:");
-  console.log(`1. Update your .env file with CONTRACT_ADDRESS=${memoryChain.address}`);
-  console.log(`2. View on explorer: https://testnet-explorer.0g.ai/address/${memoryChain.address}`);
-  console.log("3. Run the CLI: cargo run --release -- get-pointer <agent_address>");
 }
 
 main()

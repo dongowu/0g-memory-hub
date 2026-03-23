@@ -28,7 +28,7 @@ export ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
 export ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
 export ORCH_CHAIN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 export ORCH_CHAIN_PRIVATE_KEY=0x...
-export ORCH_CHAIN_ID=16602
+export ORCH_CHAIN_ID=16601
 export ORCH_HTTP_ADDR=127.0.0.1:8080
 ```
 
@@ -114,6 +114,7 @@ Expected output includes:
 
 ```bash
 npx hardhat compile
+npx hardhat test test/MemoryAnchor.js
 npx hardhat run scripts/deploy.js --network 0g-testnet
 ```
 
@@ -125,16 +126,16 @@ CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
 
 ## 8. Judge demo script
 
-Use the helper script at repository root:
+Use the judge flow document directly:
 
 ```bash
-bash scripts/demo.sh
+open docs/demo/3min-judge-flow.md
 ```
 
-For full 0G attempt:
+For a legacy root demo (older memory-hub path only):
 
 ```bash
-DEMO_ENABLE_0G=1 bash scripts/demo.sh
+bash demo.sh
 ```
 
 ## 9. Live storage proof scripts

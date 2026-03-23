@@ -1,41 +1,90 @@
 # 3-Minute Judge Demo Flow
 
-This flow is optimized for the **0G APAC Hackathon — Agentic Infrastructure & OpenClaw Lab** track and aligned to the current MVP code.
+This flow is optimized for the **0G APAC Hackathon — Agentic Infrastructure & OpenClaw Lab** track and should be recorded as a **story**, not an endpoint tour.
+
+## Recommended Demo Style
+
+### Option A — Crash / Recover / Verify (**Recommended**)
+
+This is the strongest judge-facing path because it proves the core thesis:
+
+> **An OpenClaw-style agent run can survive process loss, recover from durable memory, and stay externally verifiable on 0G.**
+
+### Option B — API Capability Tour
+
+Safer and easier, but weaker. Judges see features, not urgency.
+
+### Option C — Storage / Contract Proof Tour
+
+Useful as supporting evidence, but too infra-heavy if used alone.
+
+**Recommendation:** record **Option A**, then use storage / explorer proof as the final 20-second close.
+
+---
 
 ## Core Message
 
-Do **not** pitch this as “just another workflow backend.”
+Do **not** pitch this as “a workflow backend” or “a set of APIs.”
 
 Pitch it as:
 
-> **A durable memory and verification layer for OpenClaw-style agent workflows on 0G.**
+> **A durable memory runtime for OpenClaw-style agents on 0G: ingest events, checkpoint deterministically, recover after failure, and verify the result.**
 
-The judge should leave with exactly three ideas:
+The judge should leave with exactly four ideas:
 
-1. Workflow events enter through an OpenClaw-facing interface.
-2. Execution state becomes a deterministic checkpoint, not transient process memory.
-3. The checkpoint is persisted on 0G and can be replayed, resumed, and verified.
+1. OpenClaw-style events enter through a real service interface.
+2. Rust turns those events into deterministic checkpoints.
+3. 0G Storage + chain anchor make the memory durable and inspectable.
+4. Even after a restart, the run can be hydrated and traced back.
+
+---
 
 ## Demo Objective
 
-Show that workflow execution can be:
+In under 3 minutes, prove all four:
 
-- stateful (workflow metadata)
-- checkpointed (Rust core)
-- persisted (0G Storage path)
-- verifiable/anchorable (MemoryAnchor contract path)
+- **agent context exists**
+- **checkpoint state is persisted**
+- **restart does not lose memory**
+- **the run has a public verification path**
+
+---
 
 ## 20-Second Opening Script
 
-Use this wording or stay close to it:
+Use this wording or stay very close:
 
-> “This project gives OpenClaw-style agent workflows durable memory on 0G. The Go service accepts workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and the chain anchor path makes the execution externally verifiable.”
+> “Most agent demos lose memory when the process dies. We built a durable memory layer for OpenClaw-style workflows on 0G. The Go service ingests workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and the chain path anchors verification metadata so the run can be recovered and inspected.”
+
+---
+
+## Recording Setup
+
+Use **two terminals** and optionally one browser tab:
+
+- **Terminal A:** `go run . serve`
+- **Terminal B:** `curl` commands
+- **Browser tab (optional):** explorer or evidence doc
+
+Pre-build before recording so the video stays fast:
+
+```bash
+cd rust/memory-core
+cargo build --bin memory-core-rpc
+
+cd ../../apps/orchestrator-go
+go test ./...
+export ORCH_RUNTIME_BINARY_PATH="../../rust/memory-core/target/debug/memory-core-rpc"
+go run . serve
+```
+
+---
 
 ## Timeline (<= 3 minutes)
 
-### 0:00 - 0:30 Architecture context
+### 0:00 - 0:20 Problem + architecture
 
-Show:
+Show repository paths briefly:
 
 - `apps/orchestrator-go`
 - `rust/memory-core`
@@ -43,134 +92,176 @@ Show:
 
 Say:
 
-- Go handles orchestration and 0G integration.
-- Rust handles deterministic workflow state and checkpoints.
-- Contract stores workflow-centric anchors.
-- The point is durable and inspectable agent memory, not just local runtime state.
- - Judges can read the run context, checkpoint metadata, hydrate back into memory, and inspect the trace after each step.
+- Go is the orchestration and 0G integration layer.
+- Rust is the deterministic checkpoint engine.
+- MemoryAnchor is the public verification hook.
+- The point is not “one more agent API,” but **memory that survives failure**.
 
-### 0:30 - 1:15 Baseline run
-
-Run:
-
-```bash
-cd apps/orchestrator-go
-go run . workflow start judge-wf
-go run . workflow status judge-wf
-```
-
-Explain:
-
-- Workflow is created with persisted local metadata.
-- This is the workflow identity that later binds storage and chain proof.
-
-### 1:15 - 2:10 Checkpoint step run
+### 0:20 - 0:35 Show service readiness
 
 Run:
 
 ```bash
-go run . workflow step judge-wf \
-  --event-type tool_result \
-  --actor openclaw \
-  --payload '{"task":"price_check","ok":true}'
+curl http://127.0.0.1:8080/health
 ```
 
-Show output fields:
+Say:
 
-- `latest_step`
-- `latest_root`
-- `latest_cid`
+- The service probes runtime, storage, and optional anchor readiness.
+- This is a long-running infra component, not a one-shot script.
 
-Explain:
-
-- Rust runtime computes checkpoint/root.
-- Orchestrator uploads checkpoint blob to Storage path.
-- This is where the workflow stops being “just process memory.”
-
-### 2:10 - 2:40 Replay
+### 0:35 - 1:20 Ingest a real OpenClaw-style run
 
 Run:
 
 ```bash
-go run . workflow replay judge-wf
+curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest/batch \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "events":[
+      {
+        "workflowId":"wf-judge-01",
+        "runId":"run-judge-01",
+        "sessionId":"session-judge-01",
+        "traceId":"trace-judge-01",
+        "eventId":"evt-plan-1",
+        "eventType":"tool_call",
+        "actor":"planner",
+        "role":"planner",
+        "toolCallId":"tool-search-1",
+        "skillName":"memory_reader",
+        "taskId":"task-judge-1",
+        "payload":{"goal":"find BTC sentiment"}
+      },
+      {
+        "workflowId":"wf-judge-01",
+        "runId":"run-judge-01",
+        "sessionId":"session-judge-01",
+        "traceId":"trace-judge-01",
+        "eventId":"evt-tool-1",
+        "eventType":"tool_result",
+        "actor":"worker",
+        "role":"worker",
+        "parentEventId":"evt-plan-1",
+        "toolCallId":"tool-search-1",
+        "taskId":"task-judge-1",
+        "payload":{"ok":true,"summary":"sentiment mildly bullish"}
+      }
+    ]
+  }'
 ```
 
-Explain:
+Say:
 
-- Replay gives judge-readable execution trace and checkpoint linkage.
-- If the process dies, the workflow can still be recovered from persisted state.
+- This is richer than plain event logging.
+- We preserve run/session/trace/tool/task metadata so the workflow remains intelligible.
+- The response should show `latestStep`, `latestRoot`, and ideally `latestCid` / `latestTxHash`.
 
-### 2:40 - 2:55 Read + Hydrate + Trace
+### 1:20 - 1:50 Show the memory is now inspectable
 
 Run:
 
 ```bash
-curl http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/context
-curl http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/checkpoint/latest
-curl -X POST http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/hydrate
-curl http://127.0.0.1:8080/v1/openclaw/runs/judge-wf/trace
+curl http://127.0.0.1:8080/v1/openclaw/runs/run-judge-01/context
+curl http://127.0.0.1:8080/v1/openclaw/runs/run-judge-01/checkpoint/latest
 ```
 
-Explain:
+Say:
 
-- `context` returns run metadata plus the last few events with their richer OpenClaw fields.
-- `checkpoint/latest` shows the root/cid/tx for the persisted checkpoint.
-- `hydrate` demonstrates how the run can recover state and continue.
-- `trace` presents the ordered run timeline with event IDs, roles, skills, and tool calls for judges to follow.
+- `context` shows the recovered run identity plus recent OpenClaw events.
+- `checkpoint/latest` shows the checkpoint root and storage / anchor linkage.
+- This is where the run stops being “process-local memory.”
 
-### 2:55 - 3:00 Chain proof path
+### 1:50 - 2:20 Simulate failure and restart
 
-Show:
+Do this live in Terminal A:
 
-- `contracts/MemoryAnchor.sol`
-- deployment script (`scripts/deploy.js`)
-- if available, explorer tx/hash
+- stop the server with `Ctrl+C`
+- restart it with the same `go run . serve`
 
-Explain:
+While restarting, say:
 
-- `anchorCheckpoint(workflowId, stepIndex, rootHash, cidHash)` is the on-chain verification hook.
-- This binds off-chain checkpoint state to a public verification path.
+> “Now I’m simulating the exact failure mode most agent demos can’t handle: the process goes away, but the run should still be recoverable.”
+
+### 2:20 - 2:45 Hydrate the run after restart
+
+Run:
+
+```bash
+curl -X POST http://127.0.0.1:8080/v1/openclaw/runs/run-judge-01/hydrate
+curl http://127.0.0.1:8080/v1/openclaw/runs/run-judge-01/trace
+```
+
+Say:
+
+- `hydrate` rebuilds the run from persisted checkpoint state.
+- `trace` proves the ordered execution history is still available after restart.
+- This is the core product claim: **memory survives process loss**.
+
+### 2:45 - 3:00 Show verification proof
+
+Show one of:
+
+- `latestTxHash` from the API response
+- explorer page
+- `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
+
+Say:
+
+- Storage is the durable memory layer.
+- MemoryAnchor is the public verification path.
+- So the run is not only recoverable, but externally inspectable.
+
+---
 
 ## Strong Closing Line
 
 Close with:
 
-> “So the value is not only that an agent can act, but that its workflow memory can survive, be resumed, and be externally verified on 0G.”
+> “We’re not just helping an agent act. We’re making its workflow memory durable, recoverable, and verifiable on 0G.”
+
+---
 
 ## Judge Q&A Short Answers
 
 ### “Why is this a fit for Track 1?”
 
-Because it is infrastructure for OpenClaw-style agents: ingest, deterministic execution memory, replay, resume, and durable persistence.
+Because this is OpenClaw-style agent infrastructure: event ingest, deterministic memory, recovery, traceability, and durable persistence.
 
-### “Why 0G instead of normal storage?”
+### “What is the actual wow moment here?”
 
-Because the project is about durable and inspectable agent memory. 0G Storage gives the checkpoint persistence layer, and the chain anchor path adds verification metadata that can be checked outside the process.
+The wow moment is that after the service restarts, the same run can still be hydrated and traced back using persisted checkpoint state rather than in-memory context.
 
-### “What is the core technical novelty?”
+### “Why 0G instead of ordinary storage?”
 
-The system separates orchestration, deterministic checkpoint generation, durable persistence, and verification into a workflow memory stack instead of treating agent state as ephemeral runtime state.
+Because this project is about durable and inspectable agent memory. 0G Storage persists the checkpoint, and the chain path adds a verification surface outside the agent process.
 
 ### “What happens if the process crashes?”
 
-The workflow metadata remains, checkpoints can be downloaded again, and the workflow can be replayed or resumed from persisted state.
+The process can restart, the checkpoint can be reloaded, and the run can be hydrated and traced again. That is the product claim the demo proves.
 
-## Backup Mode (if live RPC unstable)
+---
 
-If RPC is down, still show:
+## Backup Mode (if live RPC is unstable)
 
-- local workflow start/status/replay
-- Rust RPC binary call:
+If live storage / chain is unstable during recording:
 
-```bash
-printf '{"cmd":"init_workflow","workflow_id":"judge-wf","agent_id":"judge-agent"}\n' \
-  | cargo run --quiet --bin memory-core-rpc
-```
+1. still show the full ingest → context → restart → hydrate → trace flow
+2. then show previously captured proof from:
+   - `docs/evidence/2026-03-22-live-storage-chain-proof.md`
+   - `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
 
-Be explicit that live storage/chain depends on endpoint availability.
+Be explicit:
+
+> “The recovery flow is live; the 0G proof page is pre-captured because endpoint stability can vary.”
+
+That is much better than pretending the network issue did not happen.
+
+---
 
 ## What to Avoid Saying
 
-- Don’t describe it as only “a CRUD API for workflows.”
-- Don’t spend the whole demo on endpoints without restating the agent-memory problem.
-- Don’t lead with implementation detail before stating the infra value.
+- Don’t lead with endpoints before stating the crash-recovery problem.
+- Don’t describe this as only “workflow CRUD.”
+- Don’t spend most of the video on contract code.
+- Don’t claim “AI infra” without proving recovery after restart.

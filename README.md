@@ -111,7 +111,7 @@ ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
 ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
 ORCH_CHAIN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 ORCH_CHAIN_PRIVATE_KEY=0x...
-ORCH_CHAIN_ID=16602
+ORCH_CHAIN_ID=16601
 ORCH_HTTP_ADDR=127.0.0.1:8080
 ```
 
@@ -203,6 +203,14 @@ This means `/health` can now return `503` not only when a required dependency is
 
 ```bash
 npx hardhat compile
+npx hardhat test test/MemoryAnchor.js
+npx hardhat run scripts/deploy.js --network 0g-testnet
+```
+
+`scripts/deploy.js` now deploys `MemoryAnchor` by default. To deploy the legacy compatibility contract instead:
+
+```bash
+CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
 ```
 
 ## Live Evidence
@@ -239,7 +247,7 @@ See:
 
 - `QUICKSTART.md`
 - `docs/demo/3min-judge-flow.md`
-- `scripts/demo.sh`
+- `docs/demo/judge-checklist.md`
 
 ## Current MVP Boundaries
 
