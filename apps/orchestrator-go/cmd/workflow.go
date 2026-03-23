@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/config"
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/ogchain"
@@ -91,6 +92,13 @@ func (a workflowStorageAdapter) DownloadCheckpoint(ctx context.Context, key stri
 	return a.client.DownloadCheckpoint(ctx, key)
 }
 
+func (a workflowStorageAdapter) CheckReadiness(ctx context.Context) error {
+	if checker, ok := a.client.(interface{ CheckReadiness(context.Context) error }); ok {
+		return checker.CheckReadiness(ctx)
+	}
+	return nil
+}
+
 type workflowAnchorAdapter struct {
 	client ogchain.Client
 }
@@ -108,9 +116,16 @@ func (a workflowAnchorAdapter) AnchorCheckpoint(ctx context.Context, in workflow
 	return result.TxHash, nil
 }
 
-func wireWorkflowMVPDeps(svc *workflow.Service) {
+func (a workflowAnchorAdapter) CheckReadiness(ctx context.Context) error {
+	if checker, ok := a.client.(interface{ CheckReadiness(context.Context) error }); ok {
+		return checker.CheckReadiness(ctx)
+	}
+	return nil
+}
+
+func wireWorkflowMVPDeps(svc *workflow.Service) io.Closer {
 	cfg := config.Load()
-	runtimeTransport := workflow.NewProcessTransport(cfg.RuntimeBinaryPath)
+	runtimeTransport := newRuntimeTransport(cfg)
 	runtimeClient := workflow.NewRuntimeClient(runtimeTransport)
 	storageClient := ogstorage.NewSDKClient(ogstorage.SDKConfig{
 		IndexerRPCURL:    cfg.StorageRPCURL,
@@ -129,6 +144,7 @@ func wireWorkflowMVPDeps(svc *workflow.Service) {
 	svc.SetRuntime(runtimeClient)
 	svc.SetStorage(workflowStorageAdapter{client: storageClient})
 	svc.SetAnchor(workflowAnchorAdapter{client: chainClient})
+	return runtimeTransport
 }
 
 var workflowResumeCmd = &cobra.Command{
@@ -136,7 +152,7 @@ var workflowResumeCmd = &cobra.Command{
 	Short: "Resume a workflow run",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		svc, err := workflowService()
+		svc, err := workflowServiceWithDeps()
 		if err != nil {
 			return err
 		}

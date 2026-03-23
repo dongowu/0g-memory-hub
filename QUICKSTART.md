@@ -1,181 +1,162 @@
-# 快速开始指南
+# Quickstart (OpenClaw Memory Runtime MVP)
 
-## 5 分钟快速上手
+This quickstart targets the new hackathon runtime:
 
-### 1. 克隆并进入项目
+- Go orchestrator: `apps/orchestrator-go`
+- Rust core: `rust/memory-core`
+- Workflow anchor contract: `contracts/MemoryAnchor.sol`
+
+## 1. Build Rust runtime binary
 
 ```bash
-cd D:/ownCode/game/0GMemoryHub
+cd rust/memory-core
+cargo test
+cargo build --bin memory-core-rpc
 ```
 
-### 2. 配置环境变量
+Set binary path for orchestrator:
 
 ```bash
-# 复制示例配置
-cp .env.example .env
-
-# 编辑 .env 文件，填入你的配置
-# - OG_STORAGE_RPC: 0G Storage RPC 端点
-# - OG_CHAIN_RPC: 0G Chain RPC 端点
-# - PRIVATE_KEY: 你的私钥
-# - CONTRACT_ADDRESS: 部署的合约地址
+export ORCH_RUNTIME_BINARY_PATH="$PWD/target/debug/memory-core-rpc"
 ```
 
-### 3. 编译项目
+## 2. Configure orchestrator env
 
 ```bash
-cargo build --release
+export ORCH_DATA_DIR=.orchestrator
+export ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
+export ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
+export ORCH_CHAIN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
+export ORCH_CHAIN_PRIVATE_KEY=0x...
+export ORCH_CHAIN_ID=16602
+export ORCH_HTTP_ADDR=127.0.0.1:8080
 ```
 
-### 4. 运行演示
+If you only want a local demo without live 0G calls, `ORCH_STORAGE_RPC_URL` can stay set but you should skip `workflow step`.
+
+## 3. Run orchestrator checks
 
 ```bash
-# 查看所有命令
-cargo run --release -- --help
-
-# 运行端到端演示
-cargo run --release -- demo ./test_memory.json 0x1234567890123456789012345678901234567890
+cd apps/orchestrator-go
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go test ./...
 ```
 
-## 常用命令
-
-### 上传文件到 0G Storage
+## 4. Local baseline flow (no live RPC required)
 
 ```bash
-cargo run --release -- upload ./memory.json --replicas 2
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow start demo-wf
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow status demo-wf
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow replay demo-wf
 ```
 
-### 在链上设置内存指针
+## 5. Run the HTTP service for OpenClaw-style ingest
 
 ```bash
-cargo run --release -- set-pointer 0x1234567890123456789012345678901234567890 0g_cid_hash
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . serve
 ```
 
-### 获取当前内存指针
+In a second shell:
 
 ```bash
-cargo run --release -- get-pointer 0x1234567890123456789012345678901234567890
+curl http://127.0.0.1:8080/health
+
+curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"runId":"demo-http","eventId":"evt-1","eventType":"tool_result","actor":"worker","payload":{"ok":true}}'
+
+curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest/batch \
+  -H 'Content-Type: application/json' \
+  -d '{"events":[
+    {"runId":"demo-http","eventId":"evt-2","eventType":"tool_call","actor":"planner","payload":{"tool":"search"}},
+    {"runId":"demo-http","eventId":"evt-3","eventType":"tool_result","actor":"worker","payload":{"ok":true}}
+  ]}'
+
+curl http://127.0.0.1:8080/v1/workflows/demo-http
+curl http://127.0.0.1:8080/v1/workflows/demo-http/replay
+curl -X POST http://127.0.0.1:8080/v1/workflows/demo-http/resume
 ```
 
-### 获取完整内存历史
+The HTTP path is retry-safe for duplicate `eventId` values and uses the persistent Rust runtime transport under the hood.
+
+`/health` returns:
+
+- `200` when required service dependencies are ready
+- `503` when runtime or storage readiness fails
+
+The response includes per-component readiness so you can tell whether the issue is runtime, storage, or optional anchor configuration.
+
+## 6. Full step flow (requires current official storage integration)
 
 ```bash
-cargo run --release -- get-history 0x1234567890123456789012345678901234567890
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow step demo-wf \
+  --event-type tool_result \
+  --actor openclaw \
+  --payload '{"task":"fetch_price","ok":true}'
 ```
 
-### 从 0G Storage 下载文件
+Expected output includes:
+
+- `latest_step`
+- `latest_root`
+- `latest_cid`
+
+## 7. Compile contract and deploy
 
 ```bash
-cargo run --release -- download 0g_cid_hash --output ./restored.json --verify
-```
-
-## 使用 Makefile 快捷命令
-
-```bash
-# 查看所有命令
-make help
-
-# 编译
-make build
-
-# 运行测试
-make test
-
-# 运行演示
-make demo
-
-# 清理
-make clean
-
-# 代码格式化
-make fmt
-
-# 代码检查
-make lint
-```
-
-## 部署智能合约
-
-### 使用 Foundry
-
-```bash
-# 1. 安装 Foundry
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-
-# 2. 部署合约
-forge create contracts/MemoryChain.sol:MemoryChain \
-  --rpc-url https://testnet-rpc.0g.ai \
-  --private-key 0x... \
-  --verify
-```
-
-### 使用 Hardhat
-
-```bash
-# 1. 初始化 Hardhat 项目
-npx hardhat init
-
-# 2. 配置网络
-# 在 hardhat.config.js 中添加 0G 网络
-
-# 3. 部署
+npx hardhat compile
 npx hardhat run scripts/deploy.js --network 0g-testnet
 ```
 
-## 测试网信息
+Optionally deploy legacy contract:
 
-| 参数 | 值 |
-|------|-----|
-| RPC URL | https://testnet-rpc.0g.ai |
-| Chain ID | (待确认) |
-| Explorer | https://testnet-explorer.0g.ai |
-| 水龙头 | https://testnet-faucet.0g.ai |
-
-## 获取测试币
-
-1. 访问 https://testnet-faucet.0g.ai
-2. 输入你的钱包地址
-3. 领取测试币
-
-## 常见问题
-
-**Q: 编译失败？**
-A: 确保安装了 Rust 1.70+
 ```bash
-rustup update
+CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
 ```
 
-**Q: 如何查看日志？**
-A: 设置日志级别
+## 8. Judge demo script
+
+Use the helper script at repository root:
+
 ```bash
-RUST_LOG=debug cargo run --release -- <command>
+bash scripts/demo.sh
 ```
 
-**Q: 如何测试本地？**
-A: 使用本地 RPC 端点
+For full 0G attempt:
+
 ```bash
-export OG_STORAGE_RPC=http://localhost:8545
-export OG_CHAIN_RPC=http://localhost:8546
+DEMO_ENABLE_0G=1 bash scripts/demo.sh
 ```
 
-**Q: 私钥安全吗？**
-A: 使用环境变量存储，不要在代码中硬编码。生产环境建议使用硬件钱包。
+## 9. Live storage proof scripts
 
-## 下一步
+For the independently verified small-payload storage proof path:
 
-1. ✅ 部署智能合约到 0G 主网
-2. ✅ 录制 Demo 视频
-3. ✅ 发布 Twitter 推文
-4. ✅ 提交到黑客松平台
+```bash
+PRIVATE_KEY=0x... node scripts/live_storage_flow_proof.cjs
+OG_STORAGE_ROOT=<root> PRIVATE_KEY=0x... node scripts/anchor_storage_root.cjs
+```
 
-## 获取帮助
+For the live Go orchestrator proof path, see:
 
-- 📖 [完整文档](README.md)
-- 🔗 [0G 集成指南](0G_INTEGRATION.md)
-- 📝 [GitHub 提交指南](GITHUB_SUBMISSION.md)
-- 🎯 [项目总结](PROJECT_SUMMARY.md)
+- `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
 
----
+## 10. Common issues
 
-**准备好了吗？让我们开始构建永恒的 AI 记忆！** 🚀
+### `workflow step` fails with runtime error
+
+- Check `ORCH_RUNTIME_BINARY_PATH` points to `memory-core-rpc`.
+- Verify binary is executable.
+
+### `workflow step` fails with storage RPC error
+
+- Check `ORCH_STORAGE_RPC_URL` points to a live 0G indexer endpoint.
+- The current branch uses the official SDK path first, then falls back to a generalized direct upload path when the indexer root RPC is unhealthy.
+
+### HTTP ingest returns duplicate-looking payloads
+
+- Re-sending the same `eventId` is treated as an idempotent retry and will not create a second workflow step.
+- If you want a new workflow step, send a fresh `eventId`.
+
+### hardhat warning about Node version
+
+- Use Node LTS for reliable local behavior.

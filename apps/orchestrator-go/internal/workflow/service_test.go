@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -198,6 +199,145 @@ func TestServiceReplay(t *testing.T) {
 	}
 	if lines[1] == "step=1" {
 		t.Fatalf("replay output should include event details, got: %s", lines[1])
+	}
+}
+
+func TestServiceStepIsIdempotentForDuplicateEventID(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	rt := &fakeRuntime{}
+	st := &fakeStorage{key: "cid-dup"}
+	svc.SetRuntime(rt)
+	svc.SetStorage(st)
+
+	if _, err := svc.Start("wf-dup"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	event := types.WorkflowStepEvent{
+		EventID:   "evt-1",
+		EventType: "tool_result",
+		Actor:     "worker",
+		Payload:   `{"ok":true}`,
+	}
+	first, err := svc.Step(context.Background(), "wf-dup", event)
+	if err != nil {
+		t.Fatalf("first Step() error = %v", err)
+	}
+	firstPayload := string(st.lastPayload)
+	firstRuntimeCalls := len(rt.lastEvents)
+
+	second, err := svc.Step(context.Background(), "wf-dup", event)
+	if err != nil {
+		t.Fatalf("second Step() error = %v", err)
+	}
+
+	if len(second.Events) != 1 {
+		t.Fatalf("len(second.Events) = %d, want 1", len(second.Events))
+	}
+	if second.LatestStep != first.LatestStep {
+		t.Fatalf("LatestStep changed on duplicate = %d, want %d", second.LatestStep, first.LatestStep)
+	}
+	if second.LatestCID != first.LatestCID {
+		t.Fatalf("LatestCID changed on duplicate = %s, want %s", second.LatestCID, first.LatestCID)
+	}
+	if string(st.lastPayload) != firstPayload {
+		t.Fatalf("storage payload changed on duplicate event")
+	}
+	if len(rt.lastEvents) != firstRuntimeCalls {
+		t.Fatalf("runtime replay should not run again for duplicate event")
+	}
+}
+
+func TestServiceIngestCreatesWorkflowWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	svc.SetStorage(&fakeStorage{key: "cid-ingest"})
+
+	meta, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
+		WorkflowID: "wf-ingest",
+		EventID:    "evt-1",
+		EventType:  "tool_result",
+		Actor:      "worker",
+		Payload:    `{"ok":true}`,
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	if meta.WorkflowID != "wf-ingest" {
+		t.Fatalf("WorkflowID = %q, want wf-ingest", meta.WorkflowID)
+	}
+	if meta.LatestStep != 1 {
+		t.Fatalf("LatestStep = %d, want 1", meta.LatestStep)
+	}
+	if len(meta.Events) != 1 {
+		t.Fatalf("len(meta.Events) = %d, want 1", len(meta.Events))
+	}
+}
+
+func TestServiceIngestConcurrentSameWorkflowPreservesBothEvents(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	svc.SetStorage(&fakeStorage{key: "cid-concurrent"})
+
+	events := []types.WorkflowStepEvent{
+		{WorkflowID: "wf-concurrent", EventID: "evt-1", EventType: "tool_call", Actor: "planner", Payload: `{"tool":"search"}`},
+		{WorkflowID: "wf-concurrent", EventID: "evt-2", EventType: "tool_result", Actor: "worker", Payload: `{"ok":true}`},
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(events))
+	for _, event := range events {
+		event := event
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc.Ingest(context.Background(), event)
+			errCh <- err
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("Ingest() concurrent error = %v", err)
+		}
+	}
+
+	meta, err := svc.Status("wf-concurrent")
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if meta.LatestStep != 2 {
+		t.Fatalf("LatestStep = %d, want 2", meta.LatestStep)
+	}
+	if len(meta.Events) != 2 {
+		t.Fatalf("len(meta.Events) = %d, want 2", len(meta.Events))
 	}
 }
 

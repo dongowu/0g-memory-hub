@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/pkg/types"
@@ -26,6 +28,21 @@ type CheckpointAnchor interface {
 	AnchorCheckpoint(ctx context.Context, in AnchorInput) (string, error)
 }
 
+type ReadinessChecker interface {
+	CheckReadiness(ctx context.Context) error
+}
+
+type ComponentReadiness struct {
+	Ready    bool   `json:"ready"`
+	Required bool   `json:"required"`
+	Message  string `json:"message,omitempty"`
+}
+
+type ReadinessReport struct {
+	Ready      bool                          `json:"ready"`
+	Components map[string]ComponentReadiness `json:"components"`
+}
+
 type AnchorInput struct {
 	WorkflowID string
 	StepIndex  uint64
@@ -34,6 +51,7 @@ type AnchorInput struct {
 }
 
 type Service struct {
+	mu      sync.Mutex
 	store   Store
 	runtime RuntimeAPI
 	storage CheckpointStorage
@@ -61,6 +79,12 @@ func (s *Service) SetAnchor(anchor CheckpointAnchor) {
 }
 
 func (s *Service) Start(workflowID string) (types.WorkflowMetadata, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startLocked(workflowID)
+}
+
+func (s *Service) startLocked(workflowID string) (types.WorkflowMetadata, error) {
 	if workflowID == "" {
 		workflowID = fmt.Sprintf("wf_%d", time.Now().UnixNano())
 	}
@@ -81,6 +105,12 @@ func (s *Service) Start(workflowID string) (types.WorkflowMetadata, error) {
 }
 
 func (s *Service) Step(ctx context.Context, workflowID string, event types.WorkflowStepEvent) (types.WorkflowMetadata, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stepLocked(ctx, workflowID, event)
+}
+
+func (s *Service) stepLocked(ctx context.Context, workflowID string, event types.WorkflowStepEvent) (types.WorkflowMetadata, error) {
 	if s.runtime == nil {
 		return types.WorkflowMetadata{}, fmt.Errorf("runtime is not configured")
 	}
@@ -91,6 +121,10 @@ func (s *Service) Step(ctx context.Context, workflowID string, event types.Workf
 	meta, err := s.store.Get(workflowID)
 	if err != nil {
 		return types.WorkflowMetadata{}, err
+	}
+
+	if event.EventID != "" && hasEventID(meta.Events, event.EventID) {
+		return meta, nil
 	}
 
 	event.WorkflowID = workflowID
@@ -159,7 +193,36 @@ func (s *Service) Step(ctx context.Context, workflowID string, event types.Workf
 	return meta, nil
 }
 
+func (s *Service) Ingest(ctx context.Context, event types.WorkflowStepEvent) (types.WorkflowMetadata, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workflowID := event.WorkflowID
+	if workflowID == "" {
+		meta, err := s.startLocked("")
+		if err != nil {
+			return types.WorkflowMetadata{}, err
+		}
+		workflowID = meta.WorkflowID
+	} else if _, err := s.store.Get(workflowID); err != nil {
+		if !errors.Is(err, ErrWorkflowNotFound) {
+			return types.WorkflowMetadata{}, err
+		}
+		if _, err := s.startLocked(workflowID); err != nil {
+			return types.WorkflowMetadata{}, err
+		}
+	}
+
+	return s.stepLocked(ctx, workflowID, event)
+}
+
 func (s *Service) Resume(workflowID string) (types.WorkflowMetadata, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resumeLocked(workflowID)
+}
+
+func (s *Service) resumeLocked(workflowID string) (types.WorkflowMetadata, error) {
 	meta, err := s.store.Get(workflowID)
 	if err != nil {
 		return types.WorkflowMetadata{}, err
@@ -207,6 +270,30 @@ func (s *Service) Status(workflowID string) (types.WorkflowMetadata, error) {
 	return s.store.Get(workflowID)
 }
 
+func (s *Service) Readiness(ctx context.Context) ReadinessReport {
+	s.mu.Lock()
+	runtime := s.runtime
+	storage := s.storage
+	anchor := s.anchor
+	s.mu.Unlock()
+
+	report := ReadinessReport{
+		Ready: true,
+		Components: map[string]ComponentReadiness{
+			"runtime": probeReadiness(ctx, runtime, true),
+			"storage": probeReadiness(ctx, storage, true),
+			"anchor":  probeReadiness(ctx, anchor, false),
+		},
+	}
+
+	for _, component := range report.Components {
+		if component.Required && !component.Ready {
+			report.Ready = false
+		}
+	}
+	return report
+}
+
 func hashToBytes32Hex(v string) string {
 	sum := sha256.Sum256([]byte(v))
 	return hex.EncodeToString(sum[:])
@@ -232,4 +319,43 @@ func fromRuntimeEvents(events []RuntimeEvent) []types.WorkflowStepEvent {
 		})
 	}
 	return out
+}
+
+func hasEventID(events []types.WorkflowStepEvent, eventID string) bool {
+	for _, evt := range events {
+		if evt.EventID == eventID {
+			return true
+		}
+	}
+	return false
+}
+
+func probeReadiness(ctx context.Context, dep any, required bool) ComponentReadiness {
+	component := ComponentReadiness{
+		Ready:    true,
+		Required: required,
+	}
+
+	if dep == nil {
+		if required {
+			component.Ready = false
+			component.Message = "not configured"
+			return component
+		}
+		component.Message = "not configured (optional)"
+		return component
+	}
+
+	checker, ok := dep.(ReadinessChecker)
+	if !ok {
+		component.Message = "configured"
+		return component
+	}
+	if err := checker.CheckReadiness(ctx); err != nil {
+		component.Ready = false
+		component.Message = err.Error()
+		return component
+	}
+	component.Message = "ok"
+	return component
 }

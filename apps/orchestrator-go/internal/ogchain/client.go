@@ -80,6 +80,25 @@ func NewJSONRPCClient(rpcURL, privateKey, contractAddress, chainID string, httpC
 	}
 }
 
+func (c *JSONRPCClient) CheckReadiness(_ context.Context) error {
+	if strings.TrimSpace(c.rpcURL) == "" {
+		return fmt.Errorf("chain RPC URL is required")
+	}
+	if strings.TrimSpace(c.privateKey) == "" {
+		return ErrMissingPrivateKey
+	}
+	if _, err := parseChainID(c.chainID); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidChainID, err)
+	}
+	if !common.IsHexAddress(c.contractAddress) {
+		return ErrInvalidContract
+	}
+	if _, err := crypto.HexToECDSA(strings.TrimPrefix(c.privateKey, "0x")); err != nil {
+		return fmt.Errorf("parse private key: %w", err)
+	}
+	return nil
+}
+
 func (c *JSONRPCClient) AnchorCheckpoint(ctx context.Context, in AnchorInput) (*AnchorResult, error) {
 	data, err := encodeAnchorCheckpointInput(in.WorkflowID, in.StepIndex, in.RootHash, in.CIDHash)
 	if err != nil {

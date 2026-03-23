@@ -19,6 +19,11 @@ func NewRuntimeClient(transport RuntimeTransport) *RuntimeClient {
 	return &RuntimeClient{transport: transport}
 }
 
+func (c *RuntimeClient) CheckReadiness(ctx context.Context) error {
+	_, err := c.InitWorkflow(ctx, "readiness-probe", "readiness-probe")
+	return err
+}
+
 func (c *RuntimeClient) InitWorkflow(ctx context.Context, workflowID, agentID string) (*RuntimeState, error) {
 	req := RuntimeRequest{
 		Cmd:        "init_workflow",

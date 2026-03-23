@@ -69,6 +69,19 @@ func NewSDKClient(cfg SDKConfig, adapter transferAdapter) *SDKClient {
 	}
 }
 
+func (c *SDKClient) CheckReadiness(_ context.Context) error {
+	if c.config.IndexerRPCURL == "" {
+		return fmt.Errorf("0G storage indexer RPC URL is required")
+	}
+	if c.config.BlockchainRPCURL == "" {
+		return fmt.Errorf("0G blockchain RPC URL is required for storage upload")
+	}
+	if c.config.PrivateKey == "" {
+		return fmt.Errorf("0G private key is required for storage upload")
+	}
+	return nil
+}
+
 func (c *SDKClient) UploadCheckpoint(ctx context.Context, payload []byte) (*UploadResult, error) {
 	if c.config.IndexerRPCURL == "" {
 		return nil, fmt.Errorf("0G storage indexer RPC URL is required")

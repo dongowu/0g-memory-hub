@@ -4,6 +4,7 @@ import "os"
 
 type Config struct {
 	DataDir              string
+	HTTPAddr             string
 	StorageRPCURL        string
 	ChainRPCURL          string
 	ChainPrivateKey      string
@@ -16,6 +17,11 @@ func Load() Config {
 	dataDir := os.Getenv("ORCH_DATA_DIR")
 	if dataDir == "" {
 		dataDir = ".orchestrator"
+	}
+
+	httpAddr := os.Getenv("ORCH_HTTP_ADDR")
+	if httpAddr == "" {
+		httpAddr = "127.0.0.1:8080"
 	}
 
 	storageRPCURL := os.Getenv("ORCH_STORAGE_RPC_URL")
@@ -45,6 +51,7 @@ func Load() Config {
 
 	return Config{
 		DataDir:              dataDir,
+		HTTPAddr:             httpAddr,
 		StorageRPCURL:        storageRPCURL,
 		ChainRPCURL:          chainRPCURL,
 		ChainPrivateKey:      os.Getenv("ORCH_CHAIN_PRIVATE_KEY"),

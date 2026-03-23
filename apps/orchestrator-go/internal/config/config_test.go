@@ -9,6 +9,7 @@ func TestLoadDefaultsUseOfficialGalileoEndpoints(t *testing.T) {
 	t.Setenv("ORCH_CHAIN_CONTRACT_ADDRESS", "")
 	t.Setenv("ORCH_CHAIN_ID", "")
 	t.Setenv("ORCH_RUNTIME_BINARY_PATH", "")
+	t.Setenv("ORCH_HTTP_ADDR", "")
 
 	cfg := Load()
 
@@ -20,5 +21,8 @@ func TestLoadDefaultsUseOfficialGalileoEndpoints(t *testing.T) {
 	}
 	if cfg.ChainID != "16602" {
 		t.Fatalf("ChainID = %s", cfg.ChainID)
+	}
+	if cfg.HTTPAddr != "127.0.0.1:8080" {
+		t.Fatalf("HTTPAddr = %s", cfg.HTTPAddr)
 	}
 }

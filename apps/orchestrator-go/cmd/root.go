@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io"
 	"path/filepath"
 
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/config"
@@ -25,4 +26,22 @@ func workflowService() (*workflow.Service, error) {
 		return nil, err
 	}
 	return workflow.NewService(store), nil
+}
+
+func workflowServiceWithDeps() (*workflow.Service, error) {
+	svc, _, err := workflowServiceWithClosableDeps()
+	return svc, err
+}
+
+func workflowServiceWithClosableDeps() (*workflow.Service, io.Closer, error) {
+	svc, err := workflowService()
+	if err != nil {
+		return nil, nil, err
+	}
+	closer := wireWorkflowMVPDeps(svc)
+	return svc, closer, nil
+}
+
+func newRuntimeTransport(cfg config.Config) *workflow.PersistentProcessTransport {
+	return workflow.NewPersistentProcessTransport(cfg.RuntimeBinaryPath)
 }

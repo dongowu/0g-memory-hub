@@ -1,282 +1,211 @@
-# 0G Memory Hub 🧠
+# 0G OpenClaw Memory Runtime
 
-**AI Agent Eternal Memory System on 0G**
+This repository now contains two tracks:
 
-An innovative solution for building immutable, verifiable, and eternally accessible memory systems for AI agents using 0G's decentralized infrastructure.
+- Legacy root implementation (`main.go`, `cmd/`, `core/`, `sdk/`) kept for compatibility.
+- New hackathon track implementation for AI Infra + OpenClaw in:
+  - `apps/orchestrator-go`
+  - `rust/memory-core`
+  - `contracts/MemoryAnchor.sol`
 
-## 🎯 Project Overview
+The hackathon target is a workflow runtime where each step can be checkpointed, persisted to 0G Storage, and anchored on 0G Chain.
 
-0G Memory Hub addresses a critical challenge in AI agent development: **how to give agents permanent, tamper-proof memory that persists across sessions and is verifiable on-chain**.
+## Architecture (Hackathon Track)
 
-### Core Features
+### Go orchestrator (`apps/orchestrator-go`)
 
-- **Persistent Storage**: Upload agent memories to 0G Storage with content addressing (CID)
-- **On-Chain Anchoring**: Anchor memory pointers on 0G Chain for immutability and verifiability
-- **Concurrent Uploads**: Rust + Tokio for high-throughput parallel uploads
-- **Memory History**: Full audit trail of all memory updates on-chain
-- **End-to-End Verification**: Merkle proof verification for data integrity
+- CLI commands:
+  - `serve`
+  - `workflow start`
+  - `workflow step`
+  - `workflow status`
+  - `workflow replay`
+  - `workflow resume`
+- Responsibilities:
+  - Expose an OpenClaw-facing HTTP API
+  - Accept normalized OpenClaw-like step events
+  - Support single-event and batched ingest
+  - Keep ingest idempotent by `eventId`
+  - Execute workflow creation + step append atomically inside the service
+  - Call Rust runtime over persistent stdio JSON transport
+  - Use HTTP timeouts and graceful shutdown for long-running service mode
+  - Upload checkpoint blobs through 0G Storage adapter
+  - Anchor checkpoint metadata through MemoryAnchor chain adapter
+  - Persist local workflow metadata
 
-## 🏗️ Architecture
+### Rust core (`rust/memory-core`)
 
+- Deterministic workflow state machine
+- Event append / replay
+- Checkpoint and root hash generation
+- Stdio JSON RPC binary: `memory-core-rpc`
+
+### Solidity contract (`contracts/MemoryAnchor.sol`)
+
+- Workflow-centric anchoring by `workflowId`
+- Stores latest checkpoint and full history
+- Anchor fields include `stepIndex`, `rootHash`, `cidHash`, `timestamp`, `submitter`
+
+## Repository Layout (Relevant Paths)
+
+```text
+apps/orchestrator-go/
+  cmd/
+  internal/config/
+  internal/openclaw/
+  internal/workflow/
+  internal/ogstorage/
+  internal/ogchain/
+rust/memory-core/
+  src/
+  tests/
+contracts/
+  MemoryAnchor.sol
+scripts/
+  deploy.js
+  demo.sh
+docs/demo/
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    AI Agent                                  │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-        ┌────────────┴────────────┐
-        │                         │
-        ▼                         ▼
-┌──────────────────┐      ┌──────────────────┐
-│  0G Storage      │      │  0G Chain        │
-│  (Persistence)   │      │  (Anchoring)     │
-│                  │      │                  │
-│ - Upload files   │      │ - MemoryChain    │
-│ - CID addressing │      │   contract       │
-│ - DA layer       │      │ - Pointer record │
-│ - Merkle proof   │      │ - History log    │
-└──────────────────┘      └──────────────────┘
-        ▲                         ▲
-        └────────────┬────────────┘
-                     │
-        ┌────────────▼────────────┐
-        │   0G Memory Hub CLI     │
-        │   (Rust + Tokio)        │
-        └────────────────────────┘
-```
 
-## 🚀 Quick Start
+## Environment
 
-### Prerequisites
-
-- Rust 1.70+
-- Cargo
-- 0G Testnet RPC endpoint
-- Private key for transactions
-
-### Installation
+### Orchestrator env vars
 
 ```bash
-git clone https://github.com/dongowu/0g-memory-hub.git
-cd 0g-memory-hub
-cargo build --release
+ORCH_DATA_DIR=.orchestrator
+ORCH_RUNTIME_BINARY_PATH=memory-core-rpc
+ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
+ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
+ORCH_CHAIN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
+ORCH_CHAIN_PRIVATE_KEY=0x...
+ORCH_CHAIN_ID=16602
+ORCH_HTTP_ADDR=127.0.0.1:8080
 ```
 
-### Configuration
-
-Set environment variables:
+### Hardhat env vars
 
 ```bash
-export OG_STORAGE_RPC="https://testnet-rpc.0g.ai"
-export OG_CHAIN_RPC="https://testnet-chain-rpc.0g.ai"
-export PRIVATE_KEY="0x..."
-export CONTRACT_ADDRESS="0x..."
+OG_CHAIN_RPC=https://evmrpc-testnet.0g.ai
+PRIVATE_KEY=0x...
 ```
 
-Or pass as CLI arguments:
+## Build and Test
+
+### Rust core
 
 ```bash
-cargo run -- --storage-rpc <URL> --chain-rpc <URL> --private-key <KEY> --contract-address <ADDR> <COMMAND>
-```
-
-## 📝 Usage
-
-### 1. Upload a Memory File
-
-```bash
-cargo run -- upload ./memory.json --replicas 2
-```
-
-Output:
-```
-📤 Uploading file to 0G Storage: "./memory.json"
-✅ Upload successful!
-   CID: 0g_a1b2c3d4e5f6g7h8
-   TX Hash: 0x1234567890abcdef
-   File Size: 1024 bytes
-```
-
-### 2. Set Memory Pointer On-Chain
-
-```bash
-cargo run -- set-pointer 0x1234567890123456789012345678901234567890 0g_a1b2c3d4e5f6g7h8
-```
-
-Output:
-```
-🔗 Setting memory pointer on-chain...
-   Agent: 0x1234567890123456789012345678901234567890
-   CID: 0g_a1b2c3d4e5f6g7h8
-✅ Pointer set successfully!
-   TX Hash: 0x9876543210fedcba
-   Block: 12345
-```
-
-### 3. Get Current Memory Head
-
-```bash
-cargo run -- get-pointer 0x1234567890123456789012345678901234567890
-```
-
-### 4. View Memory History
-
-```bash
-cargo run -- get-history 0x1234567890123456789012345678901234567890
-```
-
-### 5. Download Memory File
-
-```bash
-cargo run -- download 0g_a1b2c3d4e5f6g7h8 --output ./memory_restored.json --verify
-```
-
-### 6. End-to-End Demo
-
-```bash
-cargo run -- demo ./memory.json 0x1234567890123456789012345678901234567890
-```
-
-This runs the complete workflow:
-1. Upload file to 0G Storage
-2. Anchor CID on 0G Chain
-3. Verify on-chain pointer
-
-## 🔗 0G Components Integration
-
-### 0G Storage
-
-- **Purpose**: Persistent, content-addressed storage for memory files
-- **Integration**: `src/storage/mod.rs`
-- **API Used**: 0G Storage SDK for upload/download with CID generation
-- **Benefits**:
-  - Immutable content addressing
-  - Data availability guarantees via DA layer
-  - Merkle proof verification
-
-### 0G Chain
-
-- **Purpose**: On-chain anchoring of memory pointers
-- **Integration**: `src/chain/mod.rs`
-- **Contract**: `contracts/MemoryChain.sol`
-- **Functions**:
-  - `setMemoryHead(bytes32 cid)` - Update memory pointer
-  - `getMemoryHead(address agent)` - Retrieve current pointer
-  - `getMemoryHistory(address agent)` - Full audit trail
-- **Benefits**:
-  - Immutable record of memory updates
-  - Verifiable on-chain history
-  - EVM-compatible smart contracts
-
-## 📊 Performance Targets
-
-- **Upload Throughput**: 500+ TPS (with 100 concurrent uploads)
-- **Chain Confirmation**: <1 second (0G Chain finality)
-- **Storage Latency**: <2 seconds (end-to-end)
-- **Memory Size**: 100KB - 1MB per entry (scalable)
-
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
+cd rust/memory-core
 cargo test
+cargo run --bin memory-core-rpc
 ```
 
-Run with logging:
+### Go orchestrator
 
 ```bash
-RUST_LOG=debug cargo test -- --nocapture
+cd apps/orchestrator-go
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go test ./...
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . serve
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow start demo-wf
 ```
 
-## 📋 Project Structure
+> Note: on March 22, 2026, live probing showed the standard indexer root RPC was unstable while turbo REST endpoints were healthy. The orchestrator keeps the official SDK path first and now includes a generalized direct fallback path for checkpoint uploads when the root RPC path is unhealthy.
 
-```
-0g-memory-hub/
-├── src/
-│   ├── main.rs              # CLI entry point
-│   ├── cli/mod.rs           # Command-line interface
-│   ├── storage/mod.rs       # 0G Storage client
-│   ├── chain/mod.rs         # 0G Chain client
-│   └── models/mod.rs        # Data structures
-├── contracts/
-│   └── MemoryChain.sol      # Smart contract
-├── Cargo.toml               # Rust dependencies
-└── README.md                # This file
-```
+## OpenClaw HTTP API
 
-## 🔐 Security Considerations
-
-1. **Private Key Management**: Store private keys securely (use environment variables or hardware wallets)
-2. **Memory Encryption**: Sensitive memories can be encrypted before upload
-3. **Access Control**: Contract enforces that only the agent owner can update pointers
-4. **Data Verification**: Merkle proofs ensure data integrity
-
-## 🛠️ Deployment Steps
-
-### 1. Deploy Smart Contract
+The orchestrator can now run as a long-lived service:
 
 ```bash
-# Compile Solidity contract
-solc --optimize --bin --abi contracts/MemoryChain.sol
-
-# Deploy to 0G Testnet
-# (Use Hardhat, Foundry, or web3.py)
+cd apps/orchestrator-go
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . serve
 ```
 
-### 2. Configure Contract Address
+Available endpoints:
 
-Update `CONTRACT_ADDRESS` environment variable with deployed contract address.
+- `GET /health`
+- `POST /v1/openclaw/ingest`
+- `POST /v1/openclaw/ingest/batch`
+- `GET /v1/workflows/{id}`
+- `POST /v1/workflows/{id}/resume`
+- `GET /v1/workflows/{id}/replay`
 
-### 3. Run CLI
+Example single ingest:
 
 ```bash
-cargo run --release -- demo ./test_memory.json 0x<agent_address>
+curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"runId":"demo-wf","eventId":"evt-1","eventType":"tool_result","actor":"worker","payload":{"ok":true}}'
 ```
 
-### 4. Verify on Explorer
+Example batch ingest:
 
-Check transaction on 0G Explorer:
-- Storage upload: View CID in 0G Storage Explorer
-- Chain anchor: View transaction in 0G Chain Explorer
+```bash
+curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest/batch \
+  -H 'Content-Type: application/json' \
+  -d '{"events":[
+    {"runId":"demo-wf","eventId":"evt-1","eventType":"tool_call","actor":"planner","payload":{"tool":"search"}},
+    {"runId":"demo-wf","eventId":"evt-2","eventType":"tool_result","actor":"worker","payload":{"ok":true}}
+  ]}'
+```
 
-## 📈 Roadmap
+Duplicate `eventId` submissions are treated as idempotent retries and will not append duplicate workflow steps.
 
-- [x] Basic storage upload/download
-- [x] On-chain pointer anchoring
-- [x] CLI tool
-- [ ] Concurrent upload optimization (Tokio)
-- [ ] iNFT integration for encrypted metadata
-- [ ] X402 payment protocol for agent services
-- [ ] Performance benchmarking (500+ TPS)
-- [ ] Web dashboard for memory visualization
-- [ ] Multi-agent coordination
+`GET /health` now returns a structured readiness report:
 
-## 🤝 Contributing
+- `200 OK` when required components are ready
+- `503 Service Unavailable` when a required component is missing or unhealthy
 
-Contributions welcome! Please:
+Current readiness behavior:
 
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
+- `runtime`: active probe through the Rust stdio runtime client
+- `storage`: configuration-level readiness for upload-capable 0G storage settings
+- `anchor`: configuration-level readiness for chain anchor settings, reported as optional in the current MVP
 
-## 📄 License
+### Contract
 
-MIT License - see LICENSE file for details
+```bash
+npx hardhat compile
+```
 
-## 🔗 Resources
+## Live Evidence
 
-- [0G Documentation](https://docs.0g.ai/)
-- [0G Storage SDK](https://github.com/0glabs/0g-storage-client)
-- [0G Chain RPC](https://testnet-rpc.0g.ai)
-- [0G Explorer](https://testnet-explorer.0g.ai)
+- Storage + chain proof record:
+  `docs/evidence/2026-03-22-live-storage-chain-proof.md`
+- Live orchestrator workflow proof:
+  `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
+- Live HTTP readiness proof:
+  `docs/evidence/2026-03-23-live-http-readiness-proof.md`
+- Reproduction scripts:
+  - `node scripts/live_storage_flow_proof.cjs`
+  - `OG_STORAGE_ROOT=<root> node scripts/anchor_storage_root.cjs`
 
-## 📞 Support
+## Demo Paths
 
-For issues and questions:
-- GitHub Issues: [0g-memory-hub/issues](https://github.com/dongowu/0g-memory-hub/issues)
-- Discord: [0G Community](https://discord.gg/0g)
+### Local non-RPC demo (always available)
 
----
+- Start workflow
+- Show status
+- Replay local metadata trace
+- Or run the HTTP API and ingest local OpenClaw events
 
-**Built for the 0G APAC Hackathon 2026** 🚀
+This does not require live 0G RPC.
 
-*Code is law, but AI is the future of that law.*
+### Full 0G demo (requires reachable RPC and contract)
+
+- Build `memory-core-rpc` and expose it via `ORCH_RUNTIME_BINARY_PATH`
+- Call `workflow step` to create checkpoint and upload to Storage
+- Anchor checkpoint using chain client path
+- Show tx hash / status / replay
+
+See:
+
+- `QUICKSTART.md`
+- `docs/demo/3min-judge-flow.md`
+- `scripts/demo.sh`
+
+## Current MVP Boundaries
+
+- Runtime subprocess transport is persistent for long-lived server use.
+- Cancelled HTTP/runtime requests force a fresh Rust child on the next call to avoid stale stdio reads.
+- Storage and chain adapters are real client code, but live network behavior depends on your RPC endpoints.
+- Contract deployment and explorer verification depend on your configured network and account.
+- OpenClaw ingest is synchronous and currently uses a local file-backed workflow store.
