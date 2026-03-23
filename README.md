@@ -1,5 +1,36 @@
 # 0G OpenClaw Memory Runtime
 
+**0G OpenClaw Memory Runtime** is a durable memory and verification layer for agent workflows. It accepts OpenClaw-style events, rebuilds deterministic workflow state in Rust, persists checkpoints through 0G Storage, and anchors verification metadata on-chain through 0G Chain.
+
+For the **0G APAC Hackathon Track 1: Agentic Infrastructure & OpenClaw Lab**, the core claim of this project is simple:
+
+> **Agents need memory that survives crashes, resumes cleanly, and can be verified outside the model process.**
+
+This repository demonstrates that claim with:
+
+- **OpenClaw-style ingest** for long-lived workflow execution
+- **Deterministic Rust checkpoints** for replayable agent state
+- **0G Storage persistence** for durable checkpoint blobs
+- **0G Chain anchoring** for public verification metadata
+- **Replay / resume / readiness** for operator-facing workflow reliability
+
+## Why this matters for 0G
+
+- **0G Storage** gives the workflow a durable place to persist checkpoint state outside the running process.
+- **0G Chain** gives the workflow a verifiable anchor for `workflowId`, `stepIndex`, `rootHash`, and `cidHash`.
+- Together, they turn agent execution from an in-memory interaction into a **recoverable and inspectable infra primitive**.
+
+## Judge-Facing Assets
+
+- Final HackQuest submission copy:
+  `docs/submission/2026-03-23-hackquest-final-copy.md`
+- Submission checklist:
+  `docs/submission/2026-03-23-hackquest-submission-checklist.md`
+- 3-minute judge flow:
+  `docs/demo/3min-judge-flow.md`
+
+## Repository Context
+
 This repository now contains two tracks:
 
 - Legacy root implementation (`main.go`, `cmd/`, `core/`, `sdk/`) kept for compatibility.
