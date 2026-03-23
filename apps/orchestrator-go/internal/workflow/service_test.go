@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,12 +15,15 @@ import (
 )
 
 type fakeRuntime struct {
+	mu             sync.Mutex
 	lastWorkflowID string
 	lastAgentID    string
 	lastEvents     []RuntimeEvent
 }
 
 func (f *fakeRuntime) ReplayWorkflow(_ context.Context, workflowID, agentID string, events []RuntimeEvent) (*RuntimeState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.lastWorkflowID = workflowID
 	f.lastAgentID = agentID
 	f.lastEvents = append([]RuntimeEvent(nil), events...)
@@ -45,6 +49,7 @@ func (f *fakeRuntime) BuildCheckpoint(_ context.Context, state RuntimeState) (*R
 }
 
 type fakeStorage struct {
+	mu          sync.Mutex
 	key         string
 	txHash      string
 	lastPayload []byte
@@ -56,6 +61,8 @@ type fakeStorage struct {
 }
 
 func (f *fakeStorage) UploadCheckpoint(_ context.Context, payload []byte) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.uploadErr != nil {
 		return "", "", f.uploadErr
 	}
@@ -68,6 +75,8 @@ func (f *fakeStorage) UploadCheckpoint(_ context.Context, payload []byte) (strin
 }
 
 func (f *fakeStorage) DownloadCheckpoint(ctx context.Context, key string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.lastCtx = ctx
 	f.lastKey = key
 	if f.downloadErr != nil {
@@ -77,6 +86,7 @@ func (f *fakeStorage) DownloadCheckpoint(ctx context.Context, key string) ([]byt
 }
 
 type fakeAnchor struct {
+	mu     sync.Mutex
 	txHash string
 	err    error
 	last   AnchorInput
@@ -84,6 +94,8 @@ type fakeAnchor struct {
 }
 
 func (f *fakeAnchor) AnchorCheckpoint(_ context.Context, in AnchorInput) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.called = true
 	f.last = in
 	if f.err != nil {
@@ -707,6 +719,46 @@ func TestServiceRunContextIncludesExtendedMetadata(t *testing.T) {
 	}
 	if ctxView.Events[0].Role != "planner" {
 		t.Fatalf("Role = %q, want planner", ctxView.Events[0].Role)
+	}
+}
+
+func TestServiceRunContextLimitsRecentEvents(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	svc.SetStorage(&fakeStorage{key: "cid-context-limit"})
+
+	for i := 0; i < runContextEventLimit+5; i++ {
+		_, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
+			WorkflowID: "wf-context-limit",
+			RunID:      "run-context-limit",
+			EventID:    fmt.Sprintf("evt-%d", i),
+			EventType:  "tool_call",
+			Actor:      "planner",
+			Role:       "planner",
+			Payload:    `{"tool":"search"}`,
+		})
+		if err != nil {
+			t.Fatalf("Ingest(%d) error = %v", i, err)
+		}
+	}
+
+	ctxView, err := svc.RunContext("run-context-limit")
+	if err != nil {
+		t.Fatalf("RunContext() error = %v", err)
+	}
+	if len(ctxView.Events) != runContextEventLimit {
+		t.Fatalf("len(Events) = %d, want %d", len(ctxView.Events), runContextEventLimit)
+	}
+	if ctxView.Events[0].EventID != "evt-5" {
+		t.Fatalf("oldest retained event = %q, want evt-5", ctxView.Events[0].EventID)
 	}
 }
 

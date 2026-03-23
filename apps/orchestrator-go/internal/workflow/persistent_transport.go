@@ -116,8 +116,13 @@ func (t *PersistentProcessTransport) exchangeLocked(ctx context.Context, request
 		return nil, err
 	}
 
-	if _, err := io.WriteString(t.stdin, string(requestJSON)+"\n"); err != nil {
-		return nil, fmt.Errorf("write runtime request: %w (stderr=%s)", err, strings.TrimSpace(t.stderr.String()))
+	cmd := t.cmd
+	stdin := t.stdin
+	stdout := t.stdout
+	stderr := t.stderr
+
+	if _, err := io.WriteString(stdin, string(requestJSON)+"\n"); err != nil {
+		return nil, fmt.Errorf("write runtime request: %w (stderr=%s)", err, strings.TrimSpace(stderr.String()))
 	}
 
 	type result struct {
@@ -126,7 +131,7 @@ func (t *PersistentProcessTransport) exchangeLocked(ctx context.Context, request
 	}
 	readCh := make(chan result, 1)
 	go func() {
-		line, err := t.stdout.ReadBytes('\n')
+		line, err := stdout.ReadBytes('\n')
 		readCh <- result{line: line, err: err}
 	}()
 
@@ -135,15 +140,15 @@ func (t *PersistentProcessTransport) exchangeLocked(ctx context.Context, request
 		return nil, ctx.Err()
 	case res := <-readCh:
 		if res.err != nil && len(res.line) == 0 {
-			if waitErr := t.cmd.Wait(); waitErr != nil {
-				return nil, fmt.Errorf("read runtime response: %w (wait=%v, stderr=%s)", res.err, waitErr, strings.TrimSpace(t.stderr.String()))
+			if waitErr := cmd.Wait(); waitErr != nil {
+				return nil, fmt.Errorf("read runtime response: %w (wait=%v, stderr=%s)", res.err, waitErr, strings.TrimSpace(stderr.String()))
 			}
-			return nil, fmt.Errorf("read runtime response: %w (stderr=%s)", res.err, strings.TrimSpace(t.stderr.String()))
+			return nil, fmt.Errorf("read runtime response: %w (stderr=%s)", res.err, strings.TrimSpace(stderr.String()))
 		}
 
 		resp := strings.TrimSpace(string(res.line))
 		if resp == "" {
-			return nil, fmt.Errorf("runtime response is empty (stderr=%s)", strings.TrimSpace(t.stderr.String()))
+			return nil, fmt.Errorf("runtime response is empty (stderr=%s)", strings.TrimSpace(stderr.String()))
 		}
 		return []byte(resp), nil
 	}

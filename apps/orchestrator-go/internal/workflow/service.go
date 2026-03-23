@@ -43,72 +43,6 @@ type ReadinessReport struct {
 	Components map[string]ComponentReadiness `json:"components"`
 }
 
-type RunContext struct {
-	WorkflowID   string            `json:"workflowId"`
-	RunID        string            `json:"runId"`
-	SessionID    string            `json:"sessionId,omitempty"`
-	TraceID      string            `json:"traceId,omitempty"`
-	AgentID      string            `json:"agentId"`
-	Status       string            `json:"status"`
-	LatestStep   int64             `json:"latestStep"`
-	LatestRoot   string            `json:"latestRoot"`
-	LatestCID    string            `json:"latestCid"`
-	LatestTxHash string            `json:"latestTxHash"`
-	Events       []RunContextEvent `json:"events"`
-}
-
-const runContextEventLimit = 20
-
-type RunContextEvent struct {
-	EventID       string `json:"eventId"`
-	StepIndex     int64  `json:"stepIndex"`
-	EventType     string `json:"eventType"`
-	Actor         string `json:"actor"`
-	Role          string `json:"role,omitempty"`
-	ParentEventID string `json:"parentEventId,omitempty"`
-	ToolCallID    string `json:"toolCallId,omitempty"`
-	SkillName     string `json:"skillName,omitempty"`
-	TaskID        string `json:"taskId,omitempty"`
-	Payload       string `json:"payload"`
-}
-
-type LatestCheckpoint struct {
-	WorkflowID   string `json:"workflowId"`
-	RunID        string `json:"runId"`
-	SessionID    string `json:"sessionId,omitempty"`
-	TraceID      string `json:"traceId,omitempty"`
-	LatestStep   int64  `json:"latestStep"`
-	LatestRoot   string `json:"latestRoot"`
-	LatestCID    string `json:"latestCid"`
-	LatestTxHash string `json:"latestTxHash"`
-}
-
-type RunTrace struct {
-	WorkflowID   string         `json:"workflowId"`
-	RunID        string         `json:"runId"`
-	SessionID    string         `json:"sessionId,omitempty"`
-	TraceID      string         `json:"traceId,omitempty"`
-	Status       string         `json:"status"`
-	LatestStep   int64          `json:"latestStep"`
-	LatestRoot   string         `json:"latestRoot"`
-	LatestCID    string         `json:"latestCid"`
-	LatestTxHash string         `json:"latestTxHash"`
-	Steps        []RunTraceStep `json:"steps"`
-}
-
-type RunTraceStep struct {
-	EventID       string `json:"eventId"`
-	StepIndex     int64  `json:"stepIndex"`
-	EventType     string `json:"eventType"`
-	Actor         string `json:"actor"`
-	Role          string `json:"role,omitempty"`
-	ParentEventID string `json:"parentEventId,omitempty"`
-	ToolCallID    string `json:"toolCallId,omitempty"`
-	SkillName     string `json:"skillName,omitempty"`
-	TaskID        string `json:"taskId,omitempty"`
-	Payload       string `json:"payload"`
-}
-
 type AnchorInput struct {
 	WorkflowID string
 	StepIndex  uint64
@@ -223,16 +157,16 @@ func (s *Service) stepLocked(ctx context.Context, deps workflowDependencies, wor
 		return meta, nil
 	}
 
-	existingRunID, existingSessionID, existingTraceID := runIdentityFromEvents(meta.Events, workflowID)
+	identity := runIdentityFromEvents(meta.Events, workflowID)
 	event.WorkflowID = workflowID
 	if event.RunID == "" {
-		event.RunID = existingRunID
+		event.RunID = identity.RunID
 	}
 	if event.SessionID == "" {
-		event.SessionID = existingSessionID
+		event.SessionID = identity.SessionID
 	}
 	if event.TraceID == "" {
-		event.TraceID = existingTraceID
+		event.TraceID = identity.TraceID
 	}
 	if event.Role == "" && event.Actor != "" {
 		event.Role = event.Actor
@@ -374,8 +308,8 @@ func (s *Service) Replay(workflowID string) ([]string, error) {
 
 	lines := make([]string, 0, len(meta.Events)+1)
 	lines = append(lines, fmt.Sprintf("workflow=%s status=%s latest_root=%s latest_cid=%s", meta.WorkflowID, meta.Status, meta.LatestRoot, meta.LatestCID))
-	for i, evt := range meta.Events {
-		lines = append(lines, fmt.Sprintf("step=%d event_id=%s type=%s actor=%s payload=%s", i, evt.EventID, evt.EventType, evt.Actor, evt.Payload))
+	for _, evt := range meta.Events {
+		lines = append(lines, fmt.Sprintf("step=%d event_id=%s type=%s actor=%s payload=%s", evt.StepIndex, evt.EventID, evt.EventType, evt.Actor, evt.Payload))
 	}
 	return lines, nil
 }
@@ -397,17 +331,7 @@ func (s *Service) LatestCheckpoint(runID string) (LatestCheckpoint, error) {
 	if err != nil {
 		return LatestCheckpoint{}, err
 	}
-	runID, sessionID, traceID := runIdentityFromEvents(meta.Events, meta.WorkflowID)
-	return LatestCheckpoint{
-		WorkflowID:   meta.WorkflowID,
-		RunID:        runID,
-		SessionID:    sessionID,
-		TraceID:      traceID,
-		LatestStep:   meta.LatestStep,
-		LatestRoot:   meta.LatestRoot,
-		LatestCID:    meta.LatestCID,
-		LatestTxHash: meta.LatestTxHash,
-	}, nil
+	return buildLatestCheckpoint(meta), nil
 }
 
 func (s *Service) Hydrate(ctx context.Context, runID string) (RunContext, error) {
@@ -427,73 +351,11 @@ func (s *Service) RunTrace(runID string) (RunTrace, error) {
 	if err != nil {
 		return RunTrace{}, err
 	}
-	runID, sessionID, traceID := runIdentityFromEvents(meta.Events, meta.WorkflowID)
-	steps := make([]RunTraceStep, 0, len(meta.Events))
-	for _, event := range meta.Events {
-		steps = append(steps, RunTraceStep{
-			EventID:       event.EventID,
-			StepIndex:     event.StepIndex,
-			EventType:     event.EventType,
-			Actor:         event.Actor,
-			Role:          event.Role,
-			ParentEventID: event.ParentEventID,
-			ToolCallID:    event.ToolCallID,
-			SkillName:     event.SkillName,
-			TaskID:        event.TaskID,
-			Payload:       event.Payload,
-		})
-	}
-	return RunTrace{
-		WorkflowID:   meta.WorkflowID,
-		RunID:        runID,
-		SessionID:    sessionID,
-		TraceID:      traceID,
-		Status:       string(meta.Status),
-		LatestStep:   meta.LatestStep,
-		LatestRoot:   meta.LatestRoot,
-		LatestCID:    meta.LatestCID,
-		LatestTxHash: meta.LatestTxHash,
-		Steps:        steps,
-	}, nil
+	return buildRunTrace(meta), nil
 }
 
 func (s *Service) metadataForRun(runID string) (types.WorkflowMetadata, error) {
-	if runID == "" {
-		return types.WorkflowMetadata{}, ErrWorkflowNotFound
-	}
-
-	meta, err := s.store.Get(runID)
-	if err == nil {
-		resolvedRunID, _, _ := runIdentityFromEvents(meta.Events, meta.WorkflowID)
-		if meta.WorkflowID == runID || resolvedRunID == runID {
-			return meta, nil
-		}
-	}
-	if err != nil && !errors.Is(err, ErrWorkflowNotFound) {
-		return types.WorkflowMetadata{}, err
-	}
-
-	all, err := s.store.List()
-	if err != nil {
-		return types.WorkflowMetadata{}, err
-	}
-
-	var match *types.WorkflowMetadata
-	for i := range all {
-		candidate := all[i]
-		candidateRunID, _, _ := runIdentityFromEvents(candidate.Events, candidate.WorkflowID)
-		if candidateRunID != runID {
-			continue
-		}
-		if match == nil || candidate.UpdatedAt.After(match.UpdatedAt) {
-			copied := candidate
-			match = &copied
-		}
-	}
-	if match == nil {
-		return types.WorkflowMetadata{}, ErrWorkflowNotFound
-	}
-	return *match, nil
+	return s.store.FindByRunID(runID)
 }
 
 func (s *Service) Readiness(ctx context.Context) ReadinessReport {
@@ -613,67 +475,6 @@ func fromRuntimeEvents(workflowID string, events []RuntimeEvent, prior []types.W
 		}
 	}
 	return out
-}
-
-func runIdentityFromEvents(events []types.WorkflowStepEvent, defaultRunID string) (string, string, string) {
-	runID := ""
-	sessionID := ""
-	traceID := ""
-	for i := len(events) - 1; i >= 0; i-- {
-		event := events[i]
-		if runID == "" && event.RunID != "" {
-			runID = event.RunID
-		}
-		if sessionID == "" && event.SessionID != "" {
-			sessionID = event.SessionID
-		}
-		if traceID == "" && event.TraceID != "" {
-			traceID = event.TraceID
-		}
-		if runID != "" && sessionID != "" && traceID != "" {
-			break
-		}
-	}
-	if runID == "" {
-		runID = defaultRunID
-	}
-	return runID, sessionID, traceID
-}
-
-func buildRunContext(meta types.WorkflowMetadata) RunContext {
-	runID, sessionID, traceID := runIdentityFromEvents(meta.Events, meta.WorkflowID)
-	events := meta.Events
-	if len(events) > runContextEventLimit {
-		events = events[len(events)-runContextEventLimit:]
-	}
-	contextEvents := make([]RunContextEvent, 0, len(events))
-	for _, event := range events {
-		contextEvents = append(contextEvents, RunContextEvent{
-			EventID:       event.EventID,
-			StepIndex:     event.StepIndex,
-			EventType:     event.EventType,
-			Actor:         event.Actor,
-			Role:          event.Role,
-			ParentEventID: event.ParentEventID,
-			ToolCallID:    event.ToolCallID,
-			SkillName:     event.SkillName,
-			TaskID:        event.TaskID,
-			Payload:       event.Payload,
-		})
-	}
-	return RunContext{
-		WorkflowID:   meta.WorkflowID,
-		RunID:        runID,
-		SessionID:    sessionID,
-		TraceID:      traceID,
-		AgentID:      meta.AgentID,
-		Status:       string(meta.Status),
-		LatestStep:   meta.LatestStep,
-		LatestRoot:   meta.LatestRoot,
-		LatestCID:    meta.LatestCID,
-		LatestTxHash: meta.LatestTxHash,
-		Events:       contextEvents,
-	}
 }
 
 func hasEventID(events []types.WorkflowStepEvent, eventID string) bool {

@@ -15,6 +15,7 @@ var ErrWorkflowNotFound = errors.New("workflow not found")
 type Store interface {
 	Save(meta types.WorkflowMetadata) error
 	Get(workflowID string) (types.WorkflowMetadata, error)
+	FindByRunID(runID string) (types.WorkflowMetadata, error)
 	List() ([]types.WorkflowMetadata, error)
 }
 
@@ -73,6 +74,46 @@ func (f *FileStore) List() ([]types.WorkflowMetadata, error) {
 		out = append(out, meta)
 	}
 	return out, nil
+}
+
+func (f *FileStore) FindByRunID(runID string) (types.WorkflowMetadata, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	data, err := f.loadUnsafe()
+	if err != nil {
+		return types.WorkflowMetadata{}, err
+	}
+	return findByRunIDUnsafe(data, runID)
+}
+
+func findByRunIDUnsafe(data map[string]types.WorkflowMetadata, runID string) (types.WorkflowMetadata, error) {
+	if runID == "" {
+		return types.WorkflowMetadata{}, ErrWorkflowNotFound
+	}
+
+	if meta, ok := data[runID]; ok {
+		identity := runIdentityFromEvents(meta.Events, meta.WorkflowID)
+		if meta.WorkflowID == runID || identity.RunID == runID {
+			return meta, nil
+		}
+	}
+
+	var match *types.WorkflowMetadata
+	for _, candidate := range data {
+		identity := runIdentityFromEvents(candidate.Events, candidate.WorkflowID)
+		if identity.RunID != runID {
+			continue
+		}
+		if match == nil || candidate.UpdatedAt.After(match.UpdatedAt) || (candidate.UpdatedAt.Equal(match.UpdatedAt) && candidate.WorkflowID > match.WorkflowID) {
+			copied := candidate
+			match = &copied
+		}
+	}
+	if match == nil {
+		return types.WorkflowMetadata{}, ErrWorkflowNotFound
+	}
+	return *match, nil
 }
 
 func (f *FileStore) loadUnsafe() (map[string]types.WorkflowMetadata, error) {
