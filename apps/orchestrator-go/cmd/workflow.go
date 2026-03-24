@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -223,6 +224,31 @@ var workflowStatusCmd = &cobra.Command{
 	},
 }
 
+var workflowVerifyCmd = &cobra.Command{
+	Use:   "verify [run-id]",
+	Short: "Verify a workflow run and print judge-facing JSON",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		svc, closer, err := workflowServiceWithClosableDeps()
+		if err != nil {
+			return err
+		}
+		if closer != nil {
+			defer closer.Close()
+		}
+
+		verifyResult, err := svc.VerifyRun(context.Background(), args[0])
+		if err != nil {
+			return err
+		}
+
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetEscapeHTML(false)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(verifyResult)
+	},
+}
+
 func init() {
 	workflowStepCmd.Flags().String("event-type", "task_event", "Normalized event type")
 	workflowStepCmd.Flags().String("actor", "openclaw", "Actor producing this event")
@@ -234,6 +260,7 @@ func init() {
 		workflowResumeCmd,
 		workflowReplayCmd,
 		workflowStatusCmd,
+		workflowVerifyCmd,
 	)
 
 	rootCmd.AddCommand(workflowCmd)

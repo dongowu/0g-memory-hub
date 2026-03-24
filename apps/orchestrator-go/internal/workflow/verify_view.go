@@ -15,27 +15,26 @@ type AnchorLatestCheckpoint struct {
 }
 
 type VerifyRunResult struct {
-	RunID                string                      `json:"runId"`
-	WorkflowID           string                      `json:"workflowId"`
-	LocalMetadata        VerifyLocalMetadataView     `json:"localMetadata"`
-	RecomputedCheckpoint VerifyCheckpointView        `json:"recomputedCheckpoint"`
-	StorageCheckpoint    VerifyCheckpointView        `json:"storageCheckpoint"`
-	OnChainCheckpoint    VerifyOnChainCheckpointView `json:"onChainCheckpoint"`
-	Checks               []VerifyCheck               `json:"checks"`
-	Verified             bool                        `json:"verified"`
+	RunID      string                    `json:"runId"`
+	WorkflowID string                    `json:"workflowId"`
+	SessionID  string                    `json:"sessionId,omitempty"`
+	TraceID    string                    `json:"traceId,omitempty"`
+	Verified   bool                      `json:"verified"`
+	Expected   VerifyExpectedView        `json:"expected"`
+	Recomputed VerifyCheckpointView      `json:"recomputed"`
+	Storage    VerifyCheckpointView      `json:"storage"`
+	Chain      VerifyChainCheckpointView `json:"chain"`
+	Checks     []VerifyCheck             `json:"checks"`
 }
 
-type VerifyLocalMetadataView struct {
-	WorkflowID   string `json:"workflowId"`
-	RunID        string `json:"runId"`
-	SessionID    string `json:"sessionId,omitempty"`
-	TraceID      string `json:"traceId,omitempty"`
-	AgentID      string `json:"agentId"`
-	Status       string `json:"status"`
-	LatestStep   int64  `json:"latestStep"`
-	LatestRoot   string `json:"latestRoot"`
-	LatestCID    string `json:"latestCid"`
-	LatestTxHash string `json:"latestTxHash"`
+type VerifyExpectedView struct {
+	WorkflowID string `json:"workflowId"`
+	AgentID    string `json:"agentId"`
+	Status     string `json:"status,omitempty"`
+	StepIndex  uint64 `json:"stepIndex,omitempty"`
+	RootHash   string `json:"rootHash,omitempty"`
+	CID        string `json:"cid,omitempty"`
+	TxHash     string `json:"txHash,omitempty"`
 }
 
 type VerifyCheckpointView struct {
@@ -48,7 +47,7 @@ type VerifyCheckpointView struct {
 	Error      string `json:"error,omitempty"`
 }
 
-type VerifyOnChainCheckpointView struct {
+type VerifyChainCheckpointView struct {
 	WorkflowIDHash string `json:"workflowIdHash,omitempty"`
 	StepIndex      uint64 `json:"stepIndex,omitempty"`
 	RootHash       string `json:"rootHash,omitempty"`
@@ -79,17 +78,16 @@ func buildVerifyRunResult(runID string, meta types.WorkflowMetadata) VerifyRunRe
 	return VerifyRunResult{
 		RunID:      resolvedRunID,
 		WorkflowID: meta.WorkflowID,
-		LocalMetadata: VerifyLocalMetadataView{
-			WorkflowID:   meta.WorkflowID,
-			RunID:        identity.RunID,
-			SessionID:    identity.SessionID,
-			TraceID:      identity.TraceID,
-			AgentID:      meta.AgentID,
-			Status:       string(meta.Status),
-			LatestStep:   meta.LatestStep,
-			LatestRoot:   meta.LatestRoot,
-			LatestCID:    meta.LatestCID,
-			LatestTxHash: meta.LatestTxHash,
+		SessionID:  identity.SessionID,
+		TraceID:    identity.TraceID,
+		Expected: VerifyExpectedView{
+			WorkflowID: meta.WorkflowID,
+			AgentID:    meta.AgentID,
+			Status:     string(meta.Status),
+			StepIndex:  uint64(meta.LatestStep),
+			RootHash:   normalizeBytes32Hex(meta.LatestRoot),
+			CID:        meta.LatestCID,
+			TxHash:     meta.LatestTxHash,
 		},
 		Checks: make([]VerifyCheck, 0, 8),
 	}
@@ -100,7 +98,7 @@ func runtimeCheckpointView(checkpoint RuntimeCheckpoint) VerifyCheckpointView {
 		WorkflowID: checkpoint.WorkflowID,
 		AgentID:    checkpoint.AgentID,
 		StepIndex:  checkpoint.LatestStep,
-		RootHash:   checkpoint.RootHash,
+		RootHash:   normalizeBytes32Hex(checkpoint.RootHash),
 		Status:     string(checkpoint.Status),
 	}
 }

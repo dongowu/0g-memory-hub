@@ -673,6 +673,8 @@ func TestHandlerOpenClawRunRoutesVerify(t *testing.T) {
 	body := bytes.NewBufferString(`{
 		"workflowId":"wf-openclaw-verify",
 		"runId":"run-openclaw-verify",
+		"sessionId":"session-openclaw-verify",
+		"traceId":"trace-openclaw-verify",
 		"eventId":"evt-verify-1",
 		"eventType":"tool_result",
 		"actor":"worker",
@@ -697,8 +699,23 @@ func TestHandlerOpenClawRunRoutesVerify(t *testing.T) {
 		Data struct {
 			RunID      string `json:"runId"`
 			WorkflowID string `json:"workflowId"`
+			SessionID  string `json:"sessionId"`
+			TraceID    string `json:"traceId"`
 			Verified   bool   `json:"verified"`
-			Checks     []struct {
+			Expected   struct {
+				RootHash string `json:"rootHash"`
+				CID      string `json:"cid"`
+			} `json:"expected"`
+			Recomputed struct {
+				RootHash string `json:"rootHash"`
+			} `json:"recomputed"`
+			Storage struct {
+				CID string `json:"cid"`
+			} `json:"storage"`
+			Chain struct {
+				WorkflowIDHash string `json:"workflowIdHash"`
+			} `json:"chain"`
+			Checks []struct {
 				Name   string `json:"name"`
 				Passed bool   `json:"passed"`
 			} `json:"checks"`
@@ -713,8 +730,29 @@ func TestHandlerOpenClawRunRoutesVerify(t *testing.T) {
 	if verifyOut.Data.WorkflowID != "wf-openclaw-verify" {
 		t.Fatalf("workflowId = %q, want wf-openclaw-verify", verifyOut.Data.WorkflowID)
 	}
+	if verifyOut.Data.SessionID != "session-openclaw-verify" {
+		t.Fatalf("sessionId = %q, want session-openclaw-verify", verifyOut.Data.SessionID)
+	}
+	if verifyOut.Data.TraceID != "trace-openclaw-verify" {
+		t.Fatalf("traceId = %q, want trace-openclaw-verify", verifyOut.Data.TraceID)
+	}
 	if verifyOut.Data.Verified {
 		t.Fatalf("verified = true, want false when anchor is not configured")
+	}
+	if verifyOut.Data.Expected.RootHash == "" {
+		t.Fatal("expected.rootHash should not be empty")
+	}
+	if verifyOut.Data.Expected.CID == "" {
+		t.Fatal("expected.cid should not be empty")
+	}
+	if verifyOut.Data.Recomputed.RootHash == "" {
+		t.Fatal("recomputed.rootHash should not be empty")
+	}
+	if verifyOut.Data.Storage.CID == "" {
+		t.Fatal("storage.cid should not be empty")
+	}
+	if verifyOut.Data.Chain.WorkflowIDHash == "" {
+		t.Fatal("chain.workflowIdHash should not be empty")
 	}
 	if len(verifyOut.Data.Checks) == 0 {
 		t.Fatalf("expected verify checks, got empty")
@@ -859,7 +897,20 @@ func TestHandlerJudgeVerifyPage(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("cache-control = %q, want no-store", got)
 	}
-	if !strings.Contains(rec.Body.String(), "Judge Verify Console") {
-		t.Fatalf("unexpected body: %s", rec.Body.String())
+	body := rec.Body.String()
+	if !strings.Contains(body, "Judge Verify Console") {
+		t.Fatalf("unexpected body: %s", body)
+	}
+	for _, needle := range []string{
+		"Verification mismatch",
+		"Raw JSON",
+		"<th>Expected</th>",
+		"<th>Actual</th>",
+		"<th>Message</th>",
+		"get(\"runId\")",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("judge verify page missing %q: %s", needle, body)
+		}
 	}
 }

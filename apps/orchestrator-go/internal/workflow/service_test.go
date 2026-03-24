@@ -910,6 +910,8 @@ func TestServiceVerifyRunSuccess(t *testing.T) {
 	meta, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
 		WorkflowID: "wf-verify",
 		RunID:      "run-verify",
+		SessionID:  "session-verify",
+		TraceID:    "trace-verify",
 		EventID:    "evt-verify-1",
 		EventType:  "tool_result",
 		Actor:      "worker",
@@ -948,8 +950,29 @@ func TestServiceVerifyRunSuccess(t *testing.T) {
 	if verifyResult.WorkflowID != "wf-verify" {
 		t.Fatalf("WorkflowID = %q, want wf-verify", verifyResult.WorkflowID)
 	}
-	if verifyResult.LocalMetadata.RunID != "run-verify" {
-		t.Fatalf("RunID = %q, want run-verify", verifyResult.LocalMetadata.RunID)
+	if verifyResult.RunID != "run-verify" {
+		t.Fatalf("RunID = %q, want run-verify", verifyResult.RunID)
+	}
+	if verifyResult.SessionID != "session-verify" {
+		t.Fatalf("SessionID = %q, want session-verify", verifyResult.SessionID)
+	}
+	if verifyResult.TraceID != "trace-verify" {
+		t.Fatalf("TraceID = %q, want trace-verify", verifyResult.TraceID)
+	}
+	if verifyResult.Expected.RootHash == "" {
+		t.Fatal("expected.rootHash should not be empty")
+	}
+	if verifyResult.Expected.CID == "" {
+		t.Fatal("expected.cid should not be empty")
+	}
+	if verifyResult.Recomputed.RootHash == "" {
+		t.Fatal("recomputed.rootHash should not be empty")
+	}
+	if verifyResult.Storage.CID == "" {
+		t.Fatal("storage.cid should not be empty")
+	}
+	if verifyResult.Chain.WorkflowIDHash == "" {
+		t.Fatal("chain.workflowIdHash should not be empty")
 	}
 }
 
@@ -1100,6 +1123,8 @@ func TestServiceVerifyRunResolvesByRunID(t *testing.T) {
 	meta, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
 		WorkflowID: "wf-verify-run-lookup",
 		RunID:      "run-verify-run-lookup",
+		SessionID:  "session-verify-run-lookup",
+		TraceID:    "trace-verify-run-lookup",
 		EventID:    "evt-verify-run-lookup-1",
 		EventType:  "tool_result",
 		Actor:      "worker",
@@ -1135,8 +1160,14 @@ func TestServiceVerifyRunResolvesByRunID(t *testing.T) {
 	if verifyResult.WorkflowID != "wf-verify-run-lookup" {
 		t.Fatalf("WorkflowID = %q, want wf-verify-run-lookup", verifyResult.WorkflowID)
 	}
-	if verifyResult.LocalMetadata.RunID != "run-verify-run-lookup" {
-		t.Fatalf("RunID = %q, want run-verify-run-lookup", verifyResult.LocalMetadata.RunID)
+	if verifyResult.RunID != "run-verify-run-lookup" {
+		t.Fatalf("RunID = %q, want run-verify-run-lookup", verifyResult.RunID)
+	}
+	if verifyResult.SessionID != "session-verify-run-lookup" {
+		t.Fatalf("SessionID = %q, want session-verify-run-lookup", verifyResult.SessionID)
+	}
+	if verifyResult.TraceID != "trace-verify-run-lookup" {
+		t.Fatalf("TraceID = %q, want trace-verify-run-lookup", verifyResult.TraceID)
 	}
 }
 

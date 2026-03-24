@@ -137,6 +137,43 @@
         display: none;
       }
 
+      .state-banner {
+        margin-top: 10px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        padding: 12px 14px;
+        background: rgba(17, 24, 39, 0.85);
+      }
+
+      .state-banner.ok {
+        border-color: rgba(22, 163, 74, 0.55);
+        background: rgba(22, 163, 74, 0.14);
+      }
+
+      .state-banner.bad {
+        border-color: rgba(220, 38, 38, 0.55);
+        background: rgba(220, 38, 38, 0.14);
+      }
+
+      .state-banner.unknown {
+        border-color: rgba(217, 119, 6, 0.55);
+        background: rgba(217, 119, 6, 0.14);
+      }
+
+      .state-banner .label {
+        display: block;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+
+      .state-banner .summary {
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
       .grid {
         margin-top: 14px;
         display: grid;
@@ -162,6 +199,69 @@
 
       .card .body {
         padding: 10px 12px;
+      }
+
+      .checks-table-wrap {
+        overflow-x: auto;
+      }
+
+      table.checks {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      table.checks th,
+      table.checks td {
+        padding: 10px 8px;
+        border-bottom: 1px solid rgba(55, 65, 81, 0.55);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      table.checks th {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      table.checks td {
+        word-break: break-word;
+      }
+
+      tr.check-pass {
+        background: rgba(22, 163, 74, 0.08);
+      }
+
+      tr.check-fail {
+        background: rgba(220, 38, 38, 0.1);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 700;
+        border: 1px solid transparent;
+      }
+
+      .pill.ok {
+        color: #dcfce7;
+        border-color: rgba(22, 163, 74, 0.6);
+        background: rgba(22, 163, 74, 0.18);
+      }
+
+      .pill.bad {
+        color: #fee2e2;
+        border-color: rgba(220, 38, 38, 0.65);
+        background: rgba(220, 38, 38, 0.2);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
       }
 
       table.kv {
@@ -240,6 +340,10 @@
         <div id="metaLine" class="meta">No verification requested.</div>
       </div>
       <div id="errorBox" class="error"></div>
+      <div id="stateBanner" class="state-banner unknown">
+        <span id="stateLabel" class="label">Idle</span>
+        <div id="stateSummary" class="summary">Enter a runId to load judge-facing verification evidence.</div>
+      </div>
 
       <div class="grid">
         <section class="card">
@@ -278,6 +382,9 @@
         var metaLine = document.getElementById("metaLine");
         var errorBox = document.getElementById("errorBox");
         var rawJson = document.getElementById("rawJson");
+        var stateBanner = document.getElementById("stateBanner");
+        var stateLabel = document.getElementById("stateLabel");
+        var stateSummary = document.getElementById("stateSummary");
 
         function showError(message) {
           if (!message) {
@@ -310,6 +417,12 @@
         function setVerifiedBadge(value) {
           verifiedBadge.className = "badge " + (value === true ? "ok" : value === false ? "bad" : "unknown");
           verifiedBadge.textContent = value === true ? "VERIFIED" : value === false ? "FAILED" : "UNKNOWN";
+        }
+
+        function setState(kind, label, summary) {
+          stateBanner.className = "state-banner " + (kind || "unknown");
+          stateLabel.textContent = label || "Unknown";
+          stateSummary.textContent = summary || "No summary available.";
         }
 
         function renderKV(targetId, source, preferredKeys, booleanMode) {
@@ -361,6 +474,59 @@
           el.innerHTML = '<table class="kv"><tbody>' + rows + "</tbody></table>";
         }
 
+        function renderChecks(targetId, checks) {
+          var el = document.getElementById(targetId);
+          if (!el) return;
+
+          if (!Array.isArray(checks) || checks.length === 0) {
+            el.innerHTML = '<div class="meta">No checks returned.</div>';
+            return;
+          }
+
+          var rows = checks
+            .map(function (check, index) {
+              var safe = check && typeof check === "object" ? check : {};
+              var passed = safe.passed === true;
+              var failed = safe.passed === false;
+              var rowClass = passed ? "check-pass" : failed ? "check-fail" : "";
+              var pillClass = passed ? "ok" : failed ? "bad" : "unknown";
+              var pillText = passed ? "PASS" : failed ? "FAIL" : "UNKNOWN";
+
+              return (
+                '<tr class="' +
+                rowClass +
+                '">' +
+                "<td>" +
+                escapeHTML(safe.name || "check_" + index) +
+                "</td>" +
+                "<td><span class=\"pill " +
+                pillClass +
+                '">' +
+                pillText +
+                "</span></td>" +
+                '<td class="mono">' +
+                escapeHTML(normalizeValue(safe.expected)) +
+                "</td>" +
+                '<td class="mono">' +
+                escapeHTML(normalizeValue(safe.actual)) +
+                "</td>" +
+                "<td>" +
+                escapeHTML(normalizeValue(safe.message)) +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+
+          el.innerHTML =
+            '<div class="checks-table-wrap">' +
+            '<table class="checks">' +
+            "<thead><tr><th>Check</th><th>Passed</th><th>Expected</th><th>Actual</th><th>Message</th></tr></thead>" +
+            "<tbody>" +
+            rows +
+            "</tbody></table></div>";
+        }
+
         function escapeHTML(str) {
           return String(str)
             .replace(/&/g, "&amp;")
@@ -377,50 +543,47 @@
         }
 
         function render(payload, url) {
-          var localMetadata = payload.localMetadata || {};
           var recomputed = payload.recomputed || payload.recomputedCheckpoint || {};
           var storage = payload.storage || payload.storageCheckpoint || {};
           var chain = payload.chain || payload.onChainCheckpoint || {};
+          var failedChecks = Array.isArray(payload.checks)
+            ? payload.checks.filter(function (check) {
+                return check && check.passed === false;
+              })
+            : [];
 
           setVerifiedBadge(payload.verified);
           metaLine.textContent =
             "runId=" +
-            normalizeValue(payload.runId || localMetadata.runId) +
+            normalizeValue(payload.runId) +
             " | workflowId=" +
-            normalizeValue(payload.workflowId || localMetadata.workflowId) +
+            normalizeValue(payload.workflowId) +
             " | sessionId=" +
-            normalizeValue(payload.sessionId || localMetadata.sessionId) +
+            normalizeValue(payload.sessionId) +
             " | traceId=" +
-            normalizeValue(payload.traceId || localMetadata.traceId) +
+            normalizeValue(payload.traceId) +
             " | endpoint=" +
             url;
 
+          if (payload.verified === true) {
+            setState("ok", "Verification passed", "Recomputed runtime state, storage checkpoint, and chain anchor all match.");
+          } else if (payload.verified === false) {
+            var headline = failedChecks.length > 0 ? failedChecks[0].name || "verification mismatch" : "verification mismatch";
+            setState("bad", "Verification mismatch", "One or more checks failed. Start with: " + headline + ".");
+          } else {
+            setState("unknown", "Verification unknown", "The response did not provide a conclusive verification result.");
+          }
+
           renderKV(
             "expectedBlock",
-            payload.expected || {
-              workflowId: localMetadata.workflowId,
-              latestCid: localMetadata.latestCid,
-              latestRoot: localMetadata.latestRoot,
-              latestStep: localMetadata.latestStep,
-              latestTxHash: localMetadata.latestTxHash,
-            },
-            ["workflowId", "latestCid", "latestRoot", "latestStep", "latestTxHash"],
+            payload.expected,
+            ["workflowId", "agentId", "status", "stepIndex", "rootHash", "cid", "txHash"],
             false
           );
           renderKV("recomputedBlock", recomputed, ["workflowId", "agentId", "rootHash", "stepIndex", "status", "error"], false);
           renderKV("storageBlock", storage, ["workflowId", "cid", "rootHash", "stepIndex", "status", "error"], false);
           renderKV("chainBlock", chain, ["workflowIdHash", "cidHash", "rootHash", "stepIndex", "timestamp", "submitter", "error"], false);
-
-          if (Array.isArray(payload.checks)) {
-            var checksObject = {};
-            payload.checks.forEach(function (check, index) {
-              var key = (check && check.name) || "check_" + index;
-              checksObject[key] = check && typeof check === "object" ? check.passed : undefined;
-            });
-            renderKV("checksBlock", checksObject, [], true);
-          } else {
-            renderKV("checksBlock", payload.checks, [], true);
-          }
+          renderChecks("checksBlock", payload.checks);
         }
 
         async function verify() {
@@ -434,6 +597,7 @@
           verifyBtn.disabled = true;
           verifyBtn.textContent = "Verifying...";
           setVerifiedBadge(undefined);
+          setState("unknown", "Verifying", "Fetching verification evidence from the API.");
 
           var url = "/v1/openclaw/runs/" + encodeURIComponent(runId) + "/verify";
 
@@ -453,9 +617,11 @@
 
             if (!response.ok) {
               var msg = (json && (json.error || json.message)) || ("HTTP " + response.status);
+              setState("bad", "Request failed", "The verify endpoint returned an error. Check the raw JSON and message below.");
               showError("Request failed: " + msg);
             }
           } catch (err) {
+            setState("bad", "Runtime failure", "The browser could not load verification evidence. Confirm the service is running and try again.");
             showError(err && err.message ? err.message : "verification request failed");
             rawJson.textContent = "{}";
           } finally {
