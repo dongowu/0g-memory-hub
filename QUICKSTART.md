@@ -74,9 +74,12 @@ cd apps/orchestrator-go
 /Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . serve
 ```
 
-In a second shell:
+From the repo root in a second shell:
 
 ```bash
+./scripts/demo_verify_smoke.sh
+
+# or run the same flow manually:
 curl http://127.0.0.1:8080/health
 
 curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest \
@@ -117,6 +120,12 @@ Readiness probes are lightweight live checks:
 - `runtime`: Rust stdio runtime probe
 - `storage`: 0G indexer `/node/status`
 - `anchor`: optional chain RPC `eth_chainId` + `eth_blockNumber`
+
+CLI fallback for the same verify evidence:
+
+```bash
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow verify demo-http
+```
 
 ## 6. Full step flow (requires current official storage integration)
 
@@ -163,7 +172,13 @@ Judge/demo/submission path should use `MemoryAnchor` on Galileo.
 
 ## 8. Judge demo script
 
-Use the judge flow document directly:
+Run the smoke path directly:
+
+```bash
+./scripts/demo_verify_smoke.sh
+```
+
+Or use the judge flow document directly:
 
 ```bash
 open docs/demo/3min-judge-flow.md

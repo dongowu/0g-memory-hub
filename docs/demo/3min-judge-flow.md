@@ -79,6 +79,14 @@ export ORCH_RUNTIME_BINARY_PATH="../../rust/memory-core/target/debug/memory-core
 go run . serve
 ```
 
+Fast rehearsal path from the repo root:
+
+```bash
+./scripts/demo_verify_smoke.sh
+```
+
+Use the script to dry-run the same `health -> ingest -> context -> checkpoint/latest -> hydrate -> verify -> trace` path before recording. For the actual video, keep the manual commands below so judges can follow each step.
+
 ---
 
 ## Timeline (<= 3 minutes)

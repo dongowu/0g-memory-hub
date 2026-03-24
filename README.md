@@ -58,6 +58,7 @@ The hackathon target is a workflow runtime where each step can be checkpointed, 
   - `workflow status`
   - `workflow replay`
   - `workflow resume`
+  - `workflow verify`
 - Responsibilities:
   - Expose an OpenClaw-facing HTTP API
   - Accept normalized OpenClaw-like step events
@@ -288,12 +289,20 @@ This does not require live 0G RPC.
 - Anchor checkpoint using chain client path
 - Show `ingest -> checkpoint -> restart -> hydrate -> verify -> trace`
 - Use `/v1/openclaw/runs/{id}/verify` to prove checkpoint re-derivation and Storage / MemoryAnchor linkage
+- Or run `./scripts/demo_verify_smoke.sh` to replay the same judge flow quickly against a running service
 
 See:
 
 - `QUICKSTART.md`
 - `docs/demo/3min-judge-flow.md`
 - `docs/demo/judge-checklist.md`
+
+CLI fallback for judge-facing JSON:
+
+```bash
+cd apps/orchestrator-go
+/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow verify <run-id>
+```
 
 ## Current MVP Boundaries
 

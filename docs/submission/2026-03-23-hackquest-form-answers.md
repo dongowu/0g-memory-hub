@@ -75,7 +75,7 @@ That makes it a direct fit for the Agentic Infrastructure & OpenClaw Lab track.
 - run context endpoint with richer OpenClaw metadata
 - checkpoint metadata endpoint
 - hydrate endpoint to recover from persisted state
-- verify endpoint (`/v1/openclaw/runs/{id}/verify`, optional `/judge/verify`) to re-derive and compare checkpoint integrity
+- verify endpoint (`/v1/openclaw/runs/{id}/verify`), judge console (`/judge/verify`), and CLI fallback (`workflow verify <run-id>`) to re-derive and compare checkpoint integrity
 - trace endpoint that links steps, roles, tools, skills, and checkpoints
 - 0G Storage checkpoint upload / download path
 - 0G Chain anchor path
@@ -124,7 +124,7 @@ Current verified Galileo testnet deployment:
 - **Anchor proof tx:** `https://chainscan-galileo.0g.ai/tx/0xa794dd7aedcf7b7c349005af620f29d8a36557c7b7973f91e358e31287fad1db`
 - **Deployment proof doc:** `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
 
-Still replace these placeholders before final submission if required:
+Manual fields still pending before final submission:
 
 - **Mainnet contract address:** `TODO`
 - **Demo video link:** `TODO`

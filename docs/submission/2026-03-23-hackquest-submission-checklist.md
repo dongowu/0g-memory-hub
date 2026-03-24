@@ -15,7 +15,7 @@
 - OpenClaw-style ingest API
 - 0G Storage checkpoint path
 - on-chain MemoryAnchor anchor path
-- replay / resume / readiness / live evidence
+- replay / hydrate / verify / trace / readiness / live evidence
 
 但如果要变成 **可正式提交到 HackQuest 的完整材料**，目前最关键的缺口仍然是：
 
@@ -76,7 +76,7 @@
   - `docs/demo/judge-checklist.md`
 - [x] 已有可展示内容
   - HTTP ingest
-  - workflow replay / resume
+  - workflow replay / hydrate / verify / trace
   - readiness
   - storage / anchor proof 文档
 - [ ] 录制 **<= 3 分钟** demo 视频
@@ -154,7 +154,7 @@
 | 0G Storage 集成 | ✅ | 已有代码与 live evidence |
 | 0G Chain / Anchor 集成 | ✅ | 已有代码与链上证据 |
 | OpenClaw 叙事 | ✅ | 已形成 HTTP ingest / workflow service |
-| Replay / Resume / Readiness | ✅ | 已可展示 |
+| Hydrate / Verify / Trace / Readiness | ✅ | 已可展示 |
 | 测试网 / Galileo 证据 | ✅ | 已具备 |
 | 主网地址 | ❌ | 还缺 |
 | 主网 Explorer | ❌ | 还缺 |
@@ -180,8 +180,12 @@
   1. `serve`
   2. `/health`
   3. `/v1/openclaw/ingest`
-  4. `/v1/workflows/{id}/replay`
-  5. 0G Storage / anchor evidence
+  4. `/v1/openclaw/runs/{id}/checkpoint/latest`
+  5. `/v1/openclaw/runs/{id}/hydrate`
+  6. `/v1/openclaw/runs/{id}/verify`
+  7. `/v1/openclaw/runs/{id}/trace`
+  8. `/judge/verify?runId={id}` 或 `workflow verify <run-id>`
+  9. 0G Storage / anchor evidence
 
 ### 第三步：准备公开传播材料
 

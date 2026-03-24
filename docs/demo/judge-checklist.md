@@ -8,6 +8,7 @@ Use this checklist before recording/submitting demo evidence.
 - `rust/memory-core` tests pass.
 - `npx hardhat compile` passes.
 - `go run . serve` starts cleanly.
+- `./scripts/demo_verify_smoke.sh` completes against a running service.
 - `GET /health` works.
 - `POST /v1/openclaw/ingest/batch` works.
 - `GET /v1/openclaw/runs/{id}/context` works.
@@ -15,6 +16,7 @@ Use this checklist before recording/submitting demo evidence.
 - `GET /v1/openclaw/runs/{id}/verify` works and returns structured verification data.
 - `GET /v1/openclaw/runs/{id}/trace` works.
 - `GET /judge/verify?runId={id}` opens and shows the judge console.
+- `./scripts/demo_verify_smoke.sh` runs cleanly against the local service.
 
 ## Full 0G Checks (if enabled)
 
@@ -45,5 +47,6 @@ Use this checklist before recording/submitting demo evidence.
 - README updated with architecture and demo path.
 - QUICKSTART updated with exact MVP commands.
 - `docs/demo/3min-judge-flow.md` included.
+- `scripts/demo_verify_smoke.sh` included and syntax-checked.
 - demo commands verified end-to-end before recording.
 - repo has recent substantive commits in hackathon period.

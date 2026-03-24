@@ -40,8 +40,8 @@ For OpenClaw-style orchestration, this creates three infra problems:
 
 This project turns agent execution into a durable OpenClaw run memory primitive:
 
-- The **Go orchestrator** exposes an OpenClaw-facing HTTP API, workflow CLI, plus the new run context, checkpoint, hydrate, and trace endpoints.
-- The **Go orchestrator** also exposes a run verify surface (`/v1/openclaw/runs/{id}/verify`, optional `/judge/verify`) for judge-facing integrity checks.
+- The **Go orchestrator** exposes an OpenClaw-facing HTTP API, workflow CLI, plus run context, checkpoint, hydrate, verify, and trace endpoints.
+- The **Go orchestrator** also exposes a run verify surface (`/v1/openclaw/runs/{id}/verify`, `/judge/verify`, and `workflow verify <run-id>`) for judge-facing integrity checks.
 - The **Rust runtime** deterministically replays events and builds checkpoints.
 - The **0G Storage path** persists checkpoint blobs for long-term recovery.
 - The **0G Chain path** anchors verification metadata such as workflow ID, step index, root hash, and CID hash.
@@ -63,9 +63,9 @@ Used to upload and download workflow checkpoint blobs. This is the durable memor
 
 Used to anchor checkpoint verification metadata through the MemoryAnchor contract path.
 
-### Optional / Infra Context
+### Track Scope
 
-The project is positioned as agent infrastructure for the OpenClaw Lab track, with a design that can later attach model inference or orchestration modules without changing the workflow memory layer.
+This submission intentionally focuses on durable workflow memory infrastructure for the OpenClaw Lab track. 0G Compute and model-serving capabilities are not claimed in the current shipped version.
 
 ---
 
@@ -132,11 +132,11 @@ Without that combination, the system would be only a local runtime and not a cre
 - **Anchor proof tx:** `https://chainscan-galileo.0g.ai/tx/0xa794dd7aedcf7b7c349005af620f29d8a36557c7b7973f91e358e31287fad1db`
 - **Deployment proof doc:** `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
 
-## 11. Remaining Submission Placeholders
+## 11. Manual Submission Fields Still Pending
 
 - **Mainnet contract address (if required):** `TODO`
-- **Demo video link:** `TODO`
-- **X / Twitter post link:** `TODO`
+- **Demo video link (manual field before submission):** `TODO`
+- **X / Twitter post link (manual field before submission):** `TODO`
 
 ---
 
