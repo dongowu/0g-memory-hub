@@ -116,6 +116,20 @@ func (a workflowAnchorAdapter) AnchorCheckpoint(ctx context.Context, in workflow
 	return result.TxHash, nil
 }
 
+func (a workflowAnchorAdapter) GetLatestCheckpoint(ctx context.Context, workflowID string) (workflow.AnchorLatestCheckpoint, error) {
+	result, err := a.client.GetLatestCheckpoint(ctx, workflowID)
+	if err != nil {
+		return workflow.AnchorLatestCheckpoint{}, err
+	}
+	return workflow.AnchorLatestCheckpoint{
+		StepIndex: result.StepIndex,
+		RootHash:  result.RootHash,
+		CIDHash:   result.CIDHash,
+		Timestamp: result.Timestamp,
+		Submitter: result.Submitter,
+	}, nil
+}
+
 func (a workflowAnchorAdapter) CheckReadiness(ctx context.Context) error {
 	if checker, ok := a.client.(interface{ CheckReadiness(context.Context) error }); ok {
 		return checker.CheckReadiness(ctx)

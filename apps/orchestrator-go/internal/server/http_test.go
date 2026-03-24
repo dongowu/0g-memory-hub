@@ -408,10 +408,10 @@ func TestHandlerOpenClawBatchIngestPreservesExtendedMetadata(t *testing.T) {
 	var contextOut struct {
 		Data struct {
 			WorkflowID string `json:"workflowId"`
-			RunID     string `json:"runId"`
-			SessionID string `json:"sessionId"`
-			TraceID   string `json:"traceId"`
-			Events    []struct {
+			RunID      string `json:"runId"`
+			SessionID  string `json:"sessionId"`
+			TraceID    string `json:"traceId"`
+			Events     []struct {
 				Role       string `json:"role"`
 				ToolCallID string `json:"toolCallId"`
 				SkillName  string `json:"skillName"`
@@ -666,6 +666,68 @@ func TestHandlerWorkflowResumePropagatesRequestContext(t *testing.T) {
 	}
 }
 
+func TestHandlerOpenClawRunRoutesVerify(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(newTestService(t))
+	body := bytes.NewBufferString(`{
+		"workflowId":"wf-openclaw-verify",
+		"runId":"run-openclaw-verify",
+		"eventId":"evt-verify-1",
+		"eventType":"tool_result",
+		"actor":"worker",
+		"payload":{"ok":true}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/openclaw/ingest", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ingest status = %d, want 200 body=%s", rec.Code, rec.Body.String())
+	}
+
+	verifyReq := httptest.NewRequest(http.MethodGet, "/v1/openclaw/runs/run-openclaw-verify/verify", nil)
+	verifyRec := httptest.NewRecorder()
+	handler.ServeHTTP(verifyRec, verifyReq)
+	if verifyRec.Code != http.StatusOK {
+		t.Fatalf("verify status = %d, want 200 body=%s", verifyRec.Code, verifyRec.Body.String())
+	}
+
+	var verifyOut struct {
+		Data struct {
+			RunID      string `json:"runId"`
+			WorkflowID string `json:"workflowId"`
+			Verified   bool   `json:"verified"`
+			Checks     []struct {
+				Name   string `json:"name"`
+				Passed bool   `json:"passed"`
+			} `json:"checks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(verifyRec.Body.Bytes(), &verifyOut); err != nil {
+		t.Fatalf("decode verify response: %v", err)
+	}
+	if verifyOut.Data.RunID != "run-openclaw-verify" {
+		t.Fatalf("runId = %q, want run-openclaw-verify", verifyOut.Data.RunID)
+	}
+	if verifyOut.Data.WorkflowID != "wf-openclaw-verify" {
+		t.Fatalf("workflowId = %q, want wf-openclaw-verify", verifyOut.Data.WorkflowID)
+	}
+	if verifyOut.Data.Verified {
+		t.Fatalf("verified = true, want false when anchor is not configured")
+	}
+	if len(verifyOut.Data.Checks) == 0 {
+		t.Fatalf("expected verify checks, got empty")
+	}
+
+	notFoundReq := httptest.NewRequest(http.MethodGet, "/v1/openclaw/runs/run-missing/verify", nil)
+	notFoundRec := httptest.NewRecorder()
+	handler.ServeHTTP(notFoundRec, notFoundReq)
+	if notFoundRec.Code != http.StatusNotFound {
+		t.Fatalf("verify missing run status = %d, want 404 body=%s", notFoundRec.Code, notFoundRec.Body.String())
+	}
+}
+
 func TestHandlerOpenClawRunRoutesContextCheckpointHydrateAndTrace(t *testing.T) {
 	t.Parallel()
 
@@ -777,5 +839,27 @@ func TestHandlerOpenClawRunRoutesContextCheckpointHydrateAndTrace(t *testing.T) 
 	handler.ServeHTTP(hydrateRec, hydrateReq)
 	if hydrateRec.Code != http.StatusOK {
 		t.Fatalf("hydrate status = %d, want 200 body=%s", hydrateRec.Code, hydrateRec.Body.String())
+	}
+}
+
+func TestHandlerJudgeVerifyPage(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(newTestService(t))
+	req := httptest.NewRequest(http.MethodGet, "/judge/verify?runId=demo-http", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("judge verify page status = %d, want 200 body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
+		t.Fatalf("content-type = %q, want text/html", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache-control = %q, want no-store", got)
+	}
+	if !strings.Contains(rec.Body.String(), "Judge Verify Console") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }

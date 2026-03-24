@@ -12,9 +12,13 @@ This repository demonstrates that claim with:
 - **Deterministic Rust checkpoints** for replayable agent state
 - **0G Storage persistence** for durable checkpoint blobs
 - **0G Chain anchoring** for public verification metadata
-- **Replay / resume / readiness** for operator-facing workflow reliability
+- **Replay / resume / verify / readiness** for operator-facing workflow reliability
 
 Every stored event keeps the richer OpenClaw semantics judges expect — `runId`, `sessionId`, `traceId`, `parentEventId`, `toolCallId`, `skillName`, `taskId`, and `role` — so the workflow trace can map directly back to what the agent planned, executed, or remembered.
+
+Judge-facing verification claim:
+
+> We not only recover the run after restart, we re-derive the checkpoint and compare it against 0G Storage and MemoryAnchor-linked metadata.
 
 ## Why this matters for 0G
 
@@ -183,7 +187,9 @@ Available endpoints:
 - `GET /v1/openclaw/runs/{id}/context` (run metadata + recent events)
 - `GET /v1/openclaw/runs/{id}/checkpoint/latest` (latest checkpoint root/cid/tx)
 - `POST /v1/openclaw/runs/{id}/hydrate` (resume from the persisted checkpoint)
+- `GET /v1/openclaw/runs/{id}/verify` (re-derive + compare against persisted checkpoint metadata)
 - `GET /v1/openclaw/runs/{id}/trace` (judge-friendly run timeline)
+- `GET /judge/verify?runId={id}` (judge-facing verify console)
 
 Example single ingest:
 
@@ -237,13 +243,7 @@ After deployment, point the orchestrator at the deployed anchor contract:
 export ORCH_CHAIN_CONTRACT_ADDRESS=$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('deployments/0g-testnet/MemoryAnchor.latest.json','utf8'));process.stdout.write(d.contractAddress)")
 ```
 
-`scripts/deploy.js` now deploys `MemoryAnchor` by default. To deploy the legacy compatibility contract instead:
-
-```bash
-CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
-```
-
-> `MemoryChain` is legacy compatibility only. For the hackathon submission and judge demo, always use `MemoryAnchor`.
+`scripts/deploy.js` now deploys `MemoryAnchor` by default for the judge path on Galileo.
 
 When `RUN_ANCHOR_PROOF=1` (or `npm run deploy:proof`) is enabled, the deploy script also:
 
@@ -286,7 +286,8 @@ This does not require live 0G RPC.
 - Build `memory-core-rpc` and expose it via `ORCH_RUNTIME_BINARY_PATH`
 - Call `workflow step` to create checkpoint and upload to Storage
 - Anchor checkpoint using chain client path
-- Show tx hash / status / replay
+- Show `ingest -> checkpoint -> restart -> hydrate -> verify -> trace`
+- Use `/v1/openclaw/runs/{id}/verify` to prove checkpoint re-derivation and Storage / MemoryAnchor linkage
 
 See:
 

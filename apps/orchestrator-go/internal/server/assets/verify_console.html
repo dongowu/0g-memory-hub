@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Judge Verify Console</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --panel-2: #1f2937;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --ok: #16a34a;
+        --bad: #dc2626;
+        --warn: #d97706;
+        --line: #374151;
+        --accent: #2563eb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 24px 16px 36px;
+      }
+
+      .title {
+        margin: 0 0 6px;
+        font-size: 26px;
+        letter-spacing: 0.2px;
+      }
+
+      .subtitle {
+        margin: 0 0 18px;
+        color: var(--muted);
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+      }
+
+      .toolbar input {
+        width: 100%;
+        padding: 10px 12px;
+        background: #0b1220;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        outline: none;
+      }
+
+      .toolbar input:focus {
+        border-color: var(--accent);
+      }
+
+      .toolbar button {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 16px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .toolbar button[disabled] {
+        opacity: 0.65;
+        cursor: wait;
+      }
+
+      .status-row {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 6px 10px;
+        border: 1px solid;
+      }
+
+      .badge.ok {
+        color: #dcfce7;
+        border-color: #166534;
+        background: rgba(22, 163, 74, 0.25);
+      }
+
+      .badge.bad {
+        color: #fee2e2;
+        border-color: #7f1d1d;
+        background: rgba(220, 38, 38, 0.25);
+      }
+
+      .badge.unknown {
+        color: #fef3c7;
+        border-color: #92400e;
+        background: rgba(217, 119, 6, 0.2);
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .error {
+        margin-top: 8px;
+        color: #fecaca;
+        background: rgba(220, 38, 38, 0.2);
+        border: 1px solid #7f1d1d;
+        border-radius: 8px;
+        padding: 10px 12px;
+        display: none;
+      }
+
+      .grid {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .card h3 {
+        margin: 0;
+        font-size: 14px;
+        letter-spacing: 0.2px;
+        background: var(--panel-2);
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .card .body {
+        padding: 10px 12px;
+      }
+
+      table.kv {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      table.kv td {
+        border-bottom: 1px solid rgba(55, 65, 81, 0.45);
+        vertical-align: top;
+        padding: 8px 2px;
+        font-size: 13px;
+      }
+
+      table.kv td.key {
+        color: var(--muted);
+        width: 42%;
+      }
+
+      table.kv td.value {
+        word-break: break-word;
+      }
+
+      .bool-true {
+        color: #86efac;
+        font-weight: 700;
+      }
+
+      .bool-false {
+        color: #fca5a5;
+        font-weight: 700;
+      }
+
+      .bool-unknown {
+        color: #fcd34d;
+        font-weight: 700;
+      }
+
+      details {
+        margin-top: 12px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+
+      details > summary {
+        cursor: pointer;
+        padding: 10px 12px;
+        font-weight: 700;
+      }
+
+      pre {
+        margin: 0;
+        padding: 12px;
+        border-top: 1px solid var(--line);
+        background: #0b1220;
+        color: #d1d5db;
+        overflow: auto;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1 class="title">Judge Verify Console</h1>
+      <p class="subtitle">Run-level verification view for OpenClaw workflow evidence.</p>
+
+      <div class="toolbar">
+        <input id="runIdInput" type="text" placeholder="Enter runId (e.g. demo-http)" />
+        <button id="verifyBtn" type="button">Verify</button>
+      </div>
+
+      <div class="status-row">
+        <div id="verifiedBadge" class="badge unknown">UNKNOWN</div>
+        <div id="metaLine" class="meta">No verification requested.</div>
+      </div>
+      <div id="errorBox" class="error"></div>
+
+      <div class="grid">
+        <section class="card">
+          <h3>Expected</h3>
+          <div id="expectedBlock" class="body"></div>
+        </section>
+        <section class="card">
+          <h3>Recomputed</h3>
+          <div id="recomputedBlock" class="body"></div>
+        </section>
+        <section class="card">
+          <h3>Storage</h3>
+          <div id="storageBlock" class="body"></div>
+        </section>
+        <section class="card">
+          <h3>Chain</h3>
+          <div id="chainBlock" class="body"></div>
+        </section>
+        <section class="card">
+          <h3>Checks</h3>
+          <div id="checksBlock" class="body"></div>
+        </section>
+      </div>
+
+      <details>
+        <summary>Raw JSON</summary>
+        <pre id="rawJson">{}</pre>
+      </details>
+    </div>
+
+    <script>
+      (function () {
+        var runIdInput = document.getElementById("runIdInput");
+        var verifyBtn = document.getElementById("verifyBtn");
+        var verifiedBadge = document.getElementById("verifiedBadge");
+        var metaLine = document.getElementById("metaLine");
+        var errorBox = document.getElementById("errorBox");
+        var rawJson = document.getElementById("rawJson");
+
+        function showError(message) {
+          if (!message) {
+            errorBox.style.display = "none";
+            errorBox.textContent = "";
+            return;
+          }
+          errorBox.style.display = "block";
+          errorBox.textContent = message;
+        }
+
+        function normalizeValue(value) {
+          if (value === undefined || value === null || value === "") return "—";
+          if (typeof value === "object") return JSON.stringify(value);
+          return String(value);
+        }
+
+        function boolClass(value) {
+          if (value === true) return "bool-true";
+          if (value === false) return "bool-false";
+          return "bool-unknown";
+        }
+
+        function boolText(value) {
+          if (value === true) return "true";
+          if (value === false) return "false";
+          return "unknown";
+        }
+
+        function setVerifiedBadge(value) {
+          verifiedBadge.className = "badge " + (value === true ? "ok" : value === false ? "bad" : "unknown");
+          verifiedBadge.textContent = value === true ? "VERIFIED" : value === false ? "FAILED" : "UNKNOWN";
+        }
+
+        function renderKV(targetId, source, preferredKeys, booleanMode) {
+          var el = document.getElementById(targetId);
+          if (!el) return;
+
+          var obj = source && typeof source === "object" ? source : {};
+          var keys = Array.isArray(preferredKeys) ? preferredKeys.slice() : [];
+
+          Object.keys(obj).forEach(function (k) {
+            if (keys.indexOf(k) === -1) keys.push(k);
+          });
+
+          if (keys.length === 0) {
+            el.innerHTML = '<div class="meta">No data</div>';
+            return;
+          }
+
+          var rows = keys
+            .filter(function (key) {
+              return Object.prototype.hasOwnProperty.call(obj, key);
+            })
+            .map(function (key) {
+              var value = obj[key];
+              var rendered = "";
+              if (booleanMode && typeof value === "boolean") {
+                rendered = '<span class="' + boolClass(value) + '">' + boolText(value) + "</span>";
+              } else {
+                rendered = escapeHTML(normalizeValue(value));
+              }
+              return (
+                "<tr>" +
+                '<td class="key">' +
+                escapeHTML(key) +
+                "</td>" +
+                '<td class="value">' +
+                rendered +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+
+          if (!rows) {
+            el.innerHTML = '<div class="meta">No data</div>';
+            return;
+          }
+
+          el.innerHTML = '<table class="kv"><tbody>' + rows + "</tbody></table>";
+        }
+
+        function escapeHTML(str) {
+          return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        function extractPayload(json) {
+          if (!json || typeof json !== "object") return {};
+          if (json.data && typeof json.data === "object") return json.data;
+          return json;
+        }
+
+        function render(payload, url) {
+          var localMetadata = payload.localMetadata || {};
+          var recomputed = payload.recomputed || payload.recomputedCheckpoint || {};
+          var storage = payload.storage || payload.storageCheckpoint || {};
+          var chain = payload.chain || payload.onChainCheckpoint || {};
+
+          setVerifiedBadge(payload.verified);
+          metaLine.textContent =
+            "runId=" +
+            normalizeValue(payload.runId || localMetadata.runId) +
+            " | workflowId=" +
+            normalizeValue(payload.workflowId || localMetadata.workflowId) +
+            " | sessionId=" +
+            normalizeValue(payload.sessionId || localMetadata.sessionId) +
+            " | traceId=" +
+            normalizeValue(payload.traceId || localMetadata.traceId) +
+            " | endpoint=" +
+            url;
+
+          renderKV(
+            "expectedBlock",
+            payload.expected || {
+              workflowId: localMetadata.workflowId,
+              latestCid: localMetadata.latestCid,
+              latestRoot: localMetadata.latestRoot,
+              latestStep: localMetadata.latestStep,
+              latestTxHash: localMetadata.latestTxHash,
+            },
+            ["workflowId", "latestCid", "latestRoot", "latestStep", "latestTxHash"],
+            false
+          );
+          renderKV("recomputedBlock", recomputed, ["workflowId", "agentId", "rootHash", "stepIndex", "status", "error"], false);
+          renderKV("storageBlock", storage, ["workflowId", "cid", "rootHash", "stepIndex", "status", "error"], false);
+          renderKV("chainBlock", chain, ["workflowIdHash", "cidHash", "rootHash", "stepIndex", "timestamp", "submitter", "error"], false);
+
+          if (Array.isArray(payload.checks)) {
+            var checksObject = {};
+            payload.checks.forEach(function (check, index) {
+              var key = (check && check.name) || "check_" + index;
+              checksObject[key] = check && typeof check === "object" ? check.passed : undefined;
+            });
+            renderKV("checksBlock", checksObject, [], true);
+          } else {
+            renderKV("checksBlock", payload.checks, [], true);
+          }
+        }
+
+        async function verify() {
+          var runId = (runIdInput.value || "").trim();
+          if (!runId) {
+            showError("runId is required.");
+            return;
+          }
+
+          showError("");
+          verifyBtn.disabled = true;
+          verifyBtn.textContent = "Verifying...";
+          setVerifiedBadge(undefined);
+
+          var url = "/v1/openclaw/runs/" + encodeURIComponent(runId) + "/verify";
+
+          try {
+            var response = await fetch(url, { headers: { Accept: "application/json" } });
+            var bodyText = await response.text();
+            var json = {};
+            try {
+              json = bodyText ? JSON.parse(bodyText) : {};
+            } catch (parseErr) {
+              throw new Error("response is not valid JSON");
+            }
+
+            rawJson.textContent = JSON.stringify(json, null, 2);
+            var payload = extractPayload(json);
+            render(payload, url);
+
+            if (!response.ok) {
+              var msg = (json && (json.error || json.message)) || ("HTTP " + response.status);
+              showError("Request failed: " + msg);
+            }
+          } catch (err) {
+            showError(err && err.message ? err.message : "verification request failed");
+            rawJson.textContent = "{}";
+          } finally {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = "Verify";
+          }
+        }
+
+        verifyBtn.addEventListener("click", verify);
+        runIdInput.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") verify();
+        });
+
+        var initialRunId = new URLSearchParams(window.location.search).get("runId");
+        if (initialRunId) {
+          runIdInput.value = initialRunId;
+          verify();
+        }
+      })();
+    </script>
+  </body>
+</html>

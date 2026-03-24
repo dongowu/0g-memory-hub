@@ -96,10 +96,14 @@ curl -X POST http://127.0.0.1:8080/v1/workflows/demo-http/resume
 curl http://127.0.0.1:8080/v1/openclaw/runs/demo-http/context
 curl http://127.0.0.1:8080/v1/openclaw/runs/demo-http/checkpoint/latest
 curl -X POST http://127.0.0.1:8080/v1/openclaw/runs/demo-http/hydrate
+curl http://127.0.0.1:8080/v1/openclaw/runs/demo-http/verify
 curl http://127.0.0.1:8080/v1/openclaw/runs/demo-http/trace
+curl "http://127.0.0.1:8080/judge/verify?runId=demo-http"
 ```
 
 The HTTP path is retry-safe for duplicate `eventId` values and uses the persistent Rust runtime transport under the hood.
+
+Judge-facing check: we do not stop at recovery; we re-derive the checkpoint and compare it against persisted Storage + MemoryAnchor-linked metadata.
 
 `/health` returns:
 
@@ -155,13 +159,7 @@ deployments/0g-testnet/MemoryAnchor.latest.json
 
 `npm run evidence:testnet` then converts that JSON artifact into a markdown evidence file you can attach in the repo and quote in HackQuest materials.
 
-Optionally deploy legacy contract:
-
-```bash
-CONTRACT_NAME=MemoryChain npx hardhat run scripts/deploy.js --network 0g-testnet
-```
-
-> `MemoryChain` is kept only for legacy compatibility. The judge/demo/submission path should use `MemoryAnchor`.
+Judge/demo/submission path should use `MemoryAnchor` on Galileo.
 
 ## 8. Judge demo script
 
@@ -189,6 +187,8 @@ OG_STORAGE_ROOT=<root> PRIVATE_KEY=0x... node scripts/anchor_storage_root.cjs
 For the live Go orchestrator proof path, see:
 
 - `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
+
+`/judge/verify?runId=<id>` opens the same-origin judge console and auto-runs verification for the given run.
 
 ## 10. Common issues
 

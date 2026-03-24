@@ -78,6 +78,7 @@ func NewHandler(svc *workflow.Service) http.Handler {
 	}
 
 	h.mux.HandleFunc("/health", h.handleHealth)
+	h.mux.HandleFunc("/judge/verify", h.handleJudgeVerifyPage)
 	h.mux.HandleFunc("/v1/openclaw/ingest", h.handleOpenClawIngest)
 	h.mux.HandleFunc("/v1/openclaw/ingest/batch", h.handleOpenClawBatchIngest)
 	h.mux.HandleFunc("/v1/openclaw/runs/", h.handleOpenClawRunRoutes)
@@ -88,6 +89,16 @@ func NewHandler(svc *workflow.Service) http.Handler {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mux.ServeHTTP(w, r)
+}
+
+func (h *Handler) handleJudgeVerifyPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(VerifyConsolePageHTML()))
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +246,16 @@ func (h *Handler) handleOpenClawRunRoutes(w http.ResponseWriter, r *http.Request
 			return
 		}
 		writeJSON(w, http.StatusOK, traceView)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "verify" && r.Method == http.MethodGet {
+		verifyView, err := h.svc.VerifyRun(r.Context(), runID)
+		if err != nil {
+			handleWorkflowError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, verifyView)
 		return
 	}
 

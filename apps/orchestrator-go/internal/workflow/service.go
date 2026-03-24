@@ -26,6 +26,7 @@ type CheckpointStorage interface {
 
 type CheckpointAnchor interface {
 	AnchorCheckpoint(ctx context.Context, in AnchorInput) (string, error)
+	GetLatestCheckpoint(ctx context.Context, workflowID string) (AnchorLatestCheckpoint, error)
 }
 
 type ReadinessChecker interface {
@@ -354,6 +355,205 @@ func (s *Service) RunTrace(runID string) (RunTrace, error) {
 	return buildRunTrace(meta), nil
 }
 
+func (s *Service) VerifyRun(ctx context.Context, runID string) (VerifyRunResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	meta, err := s.metadataForRun(runID)
+	if err != nil {
+		return VerifyRunResult{}, err
+	}
+
+	deps := s.dependencies()
+	result := buildVerifyRunResult(runID, meta)
+	checks := make([]VerifyCheck, 0, 8)
+	allPassed := true
+
+	var recomputed *RuntimeCheckpoint
+	if deps.runtime == nil {
+		result.RecomputedCheckpoint.Error = "runtime is not configured"
+		check := failVerifyCheck("runtime.recompute_available", result.RecomputedCheckpoint.Error)
+		checks = append(checks, check)
+		allPassed = false
+	} else {
+		runtimeState, replayErr := deps.runtime.ReplayWorkflow(ctx, meta.WorkflowID, meta.AgentID, runtimeEventsFromMetadata(meta.Events))
+		if replayErr != nil {
+			result.RecomputedCheckpoint.Error = replayErr.Error()
+			check := failVerifyCheck("runtime.recompute_available", replayErr.Error())
+			checks = append(checks, check)
+			allPassed = false
+		} else {
+			checkpoint, checkpointErr := deps.runtime.BuildCheckpoint(ctx, *runtimeState)
+			if checkpointErr != nil {
+				result.RecomputedCheckpoint.Error = checkpointErr.Error()
+				check := failVerifyCheck("runtime.recompute_available", checkpointErr.Error())
+				checks = append(checks, check)
+				allPassed = false
+			} else {
+				recomputed = checkpoint
+				result.RecomputedCheckpoint = runtimeCheckpointView(*checkpoint)
+
+				stepCheck := compareVerifyCheck(
+					"metadata.latest_step_matches_recomputed",
+					uintToString(uint64(meta.LatestStep)),
+					uintToString(checkpoint.LatestStep),
+				)
+				checks = append(checks, stepCheck)
+				if !stepCheck.Passed {
+					allPassed = false
+				}
+
+				rootCheck := compareVerifyCheck(
+					"metadata.latest_root_matches_recomputed",
+					normalizeBytes32Hex(meta.LatestRoot),
+					normalizeBytes32Hex(checkpoint.RootHash),
+				)
+				checks = append(checks, rootCheck)
+				if !rootCheck.Passed {
+					allPassed = false
+				}
+			}
+		}
+	}
+
+	if meta.LatestCID == "" {
+		result.StorageCheckpoint.Error = "latest cid is empty"
+		check := failVerifyCheck("storage.checkpoint_available", result.StorageCheckpoint.Error)
+		checks = append(checks, check)
+		allPassed = false
+	} else if deps.storage == nil {
+		result.StorageCheckpoint.CID = meta.LatestCID
+		result.StorageCheckpoint.Error = "checkpoint storage is not configured"
+		check := failVerifyCheck("storage.checkpoint_available", result.StorageCheckpoint.Error)
+		checks = append(checks, check)
+		allPassed = false
+	} else {
+		payload, downloadErr := deps.storage.DownloadCheckpoint(ctx, meta.LatestCID)
+		if downloadErr != nil {
+			result.StorageCheckpoint.CID = meta.LatestCID
+			result.StorageCheckpoint.Error = downloadErr.Error()
+			check := failVerifyCheck("storage.checkpoint_available", downloadErr.Error())
+			checks = append(checks, check)
+			allPassed = false
+		} else {
+			var checkpoint RuntimeCheckpoint
+			if unmarshalErr := json.Unmarshal(payload, &checkpoint); unmarshalErr != nil {
+				result.StorageCheckpoint.CID = meta.LatestCID
+				result.StorageCheckpoint.Error = fmt.Sprintf("decode checkpoint: %v", unmarshalErr)
+				check := failVerifyCheck("storage.checkpoint_available", result.StorageCheckpoint.Error)
+				checks = append(checks, check)
+				allPassed = false
+			} else {
+				result.StorageCheckpoint = runtimeCheckpointView(checkpoint)
+				result.StorageCheckpoint.CID = meta.LatestCID
+
+				workflowCheck := compareVerifyCheck(
+					"storage.workflow_id_matches_metadata",
+					meta.WorkflowID,
+					checkpoint.WorkflowID,
+				)
+				checks = append(checks, workflowCheck)
+				if !workflowCheck.Passed {
+					allPassed = false
+				}
+
+				expectedStep := uint64(meta.LatestStep)
+				expectedRoot := normalizeBytes32Hex(meta.LatestRoot)
+				if recomputed != nil {
+					expectedStep = recomputed.LatestStep
+					expectedRoot = normalizeBytes32Hex(recomputed.RootHash)
+				}
+
+				stepCheck := compareVerifyCheck(
+					"storage.latest_step_matches_recomputed",
+					uintToString(expectedStep),
+					uintToString(checkpoint.LatestStep),
+				)
+				checks = append(checks, stepCheck)
+				if !stepCheck.Passed {
+					allPassed = false
+				}
+
+				rootCheck := compareVerifyCheck(
+					"storage.root_hash_matches_recomputed",
+					expectedRoot,
+					normalizeBytes32Hex(checkpoint.RootHash),
+				)
+				checks = append(checks, rootCheck)
+				if !rootCheck.Passed {
+					allPassed = false
+				}
+			}
+		}
+	}
+
+	workflowIDHash := hashToBytes32Hex(meta.WorkflowID)
+	result.OnChainCheckpoint.WorkflowIDHash = workflowIDHash
+	if deps.anchor == nil {
+		result.OnChainCheckpoint.Error = "anchor is not configured"
+		check := failVerifyCheck("anchor.latest_checkpoint_available", result.OnChainCheckpoint.Error)
+		checks = append(checks, check)
+		allPassed = false
+	} else {
+		latestCheckpoint, anchorErr := deps.anchor.GetLatestCheckpoint(ctx, workflowIDHash)
+		if anchorErr != nil {
+			result.OnChainCheckpoint.Error = anchorErr.Error()
+			check := failVerifyCheck("anchor.latest_checkpoint_available", anchorErr.Error())
+			checks = append(checks, check)
+			allPassed = false
+		} else {
+			result.OnChainCheckpoint.StepIndex = latestCheckpoint.StepIndex
+			result.OnChainCheckpoint.RootHash = latestCheckpoint.RootHash
+			result.OnChainCheckpoint.CIDHash = latestCheckpoint.CIDHash
+			result.OnChainCheckpoint.Timestamp = latestCheckpoint.Timestamp
+			result.OnChainCheckpoint.Submitter = latestCheckpoint.Submitter
+
+			expectedStep := uint64(meta.LatestStep)
+			expectedRoot := normalizeBytes32Hex(meta.LatestRoot)
+			if recomputed != nil {
+				expectedStep = recomputed.LatestStep
+				expectedRoot = normalizeBytes32Hex(recomputed.RootHash)
+			}
+			expectedCIDHash := hashToBytes32Hex(meta.LatestCID)
+
+			stepCheck := compareVerifyCheck(
+				"anchor.latest_step_matches_recomputed",
+				uintToString(expectedStep),
+				uintToString(latestCheckpoint.StepIndex),
+			)
+			checks = append(checks, stepCheck)
+			if !stepCheck.Passed {
+				allPassed = false
+			}
+
+			rootCheck := compareVerifyCheck(
+				"anchor.root_hash_matches_recomputed",
+				expectedRoot,
+				normalizeBytes32Hex(latestCheckpoint.RootHash),
+			)
+			checks = append(checks, rootCheck)
+			if !rootCheck.Passed {
+				allPassed = false
+			}
+
+			cidHashCheck := compareVerifyCheck(
+				"anchor.cid_hash_matches_latest_cid",
+				expectedCIDHash,
+				normalizeBytes32Hex(latestCheckpoint.CIDHash),
+			)
+			checks = append(checks, cidHashCheck)
+			if !cidHashCheck.Passed {
+				allPassed = false
+			}
+		}
+	}
+
+	result.Checks = checks
+	result.Verified = allPassed
+	return result, nil
+}
+
 func (s *Service) metadataForRun(runID string) (types.WorkflowMetadata, error) {
 	return s.store.FindByRunID(runID)
 }
@@ -473,6 +673,20 @@ func fromRuntimeEvents(workflowID string, events []RuntimeEvent, prior []types.W
 		if out[len(out)-1].RunID == "" {
 			out[len(out)-1].RunID = workflowID
 		}
+	}
+	return out
+}
+
+func runtimeEventsFromMetadata(events []types.WorkflowStepEvent) []RuntimeEvent {
+	out := make([]RuntimeEvent, 0, len(events))
+	for _, evt := range events {
+		out = append(out, RuntimeEvent{
+			EventID:   evt.EventID,
+			StepIndex: uint64(evt.StepIndex),
+			EventType: evt.EventType,
+			Actor:     evt.Actor,
+			Payload:   evt.Payload,
+		})
 	}
 	return out
 }

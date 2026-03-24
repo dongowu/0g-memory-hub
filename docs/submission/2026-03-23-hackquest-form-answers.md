@@ -28,7 +28,7 @@ Use this file as the direct source when filling HackQuest fields.
 
 ## 3. What the Project Does
 
-0G OpenClaw Memory Runtime is a workflow memory layer for long-lived agent execution. It accepts OpenClaw-style events through a Go orchestrator, deterministically rebuilds state in a Rust runtime, writes checkpoints to 0G Storage, and anchors verification metadata on-chain so workflows can be replayed, resumed, and externally verified. The service also exposes run context, checkpoint metadata, hydrate, and trace endpoints so planners and judges can read the recovered memory directly.
+0G OpenClaw Memory Runtime is a workflow memory layer for long-lived agent execution. It accepts OpenClaw-style events through a Go orchestrator, deterministically rebuilds state in a Rust runtime, writes checkpoints to 0G Storage, and anchors verification metadata on-chain so workflows can be replayed, resumed, and externally verified. The service also exposes run context, checkpoint metadata, hydrate, verify, and trace endpoints so planners and judges can read recovered memory and validate integrity directly.
 
 ---
 
@@ -75,6 +75,7 @@ That makes it a direct fit for the Agentic Infrastructure & OpenClaw Lab track.
 - run context endpoint with richer OpenClaw metadata
 - checkpoint metadata endpoint
 - hydrate endpoint to recover from persisted state
+- verify endpoint (`/v1/openclaw/runs/{id}/verify`, optional `/judge/verify`) to re-derive and compare checkpoint integrity
 - trace endpoint that links steps, roles, tools, skills, and checkpoints
 - 0G Storage checkpoint upload / download path
 - 0G Chain anchor path
@@ -107,9 +108,10 @@ The demo shows:
 
 1. OpenClaw-style workflow ingestion
 2. deterministic checkpoint generation in Rust
-3. workflow replay / resume
+3. workflow replay / resume / hydrate after restart
 4. 0G Storage checkpoint persistence path
-5. chain anchor verification path
+5. checkpoint verify step (`/verify`) that re-derives and compares against Storage + MemoryAnchor-linked metadata
+6. run trace continuity after verify
 
 ---
 
@@ -132,4 +134,4 @@ Still replace these placeholders before final submission if required:
 
 ## 12. Judge-Facing 30-Second Summary
 
-0G OpenClaw Memory Runtime gives OpenClaw-style agents durable memory on 0G. The Go service accepts workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and the chain path anchors verification metadata. So workflows can survive crashes, be replayed, be resumed, and be externally verified.
+0G OpenClaw Memory Runtime gives OpenClaw-style agents durable memory on 0G. The Go service accepts workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and MemoryAnchor anchors verification metadata. We not only recover after restart; we re-derive the checkpoint and compare it with Storage/MemoryAnchor-linked proof, then show the full run trace.

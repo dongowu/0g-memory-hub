@@ -12,7 +12,9 @@ Use this checklist before recording/submitting demo evidence.
 - `POST /v1/openclaw/ingest/batch` works.
 - `GET /v1/openclaw/runs/{id}/context` works.
 - `POST /v1/openclaw/runs/{id}/hydrate` works.
+- `GET /v1/openclaw/runs/{id}/verify` works and returns structured verification data.
 - `GET /v1/openclaw/runs/{id}/trace` works.
+- `GET /judge/verify?runId={id}` opens and shows the judge console.
 
 ## Full 0G Checks (if enabled)
 
@@ -25,14 +27,16 @@ Use this checklist before recording/submitting demo evidence.
 ## Demo Recording Checklist (<= 3 min)
 
 - Open with the **problem**: agent memory usually dies with the process.
-- Use the **Crash / Recover / Verify** story, not a generic feature tour.
+- Use the **Crash / Recover / Verify / Trace** story, not a generic feature tour.
 - Show architecture briefly: Go + Rust + 0G Storage + MemoryAnchor.
 - Show live commands, not slides only.
 - Show richer OpenClaw metadata (`runId`, `traceId`, tool/task linkage).
 - Show checkpoint output with `latestRoot` and `latestCid`.
 - Stop and restart the service at least once during the recording.
 - Show `hydrate` after restart.
-- Show `trace` after hydrate.
+- Show `verify` after hydrate.
+- Say explicitly: "we re-derive the checkpoint and compare it against Storage + MemoryAnchor-linked metadata."
+- Show `trace` after verify.
 - Show explorer or evidence doc for the verification close.
 - Mention fallback mode explicitly if RPC instability occurred.
 

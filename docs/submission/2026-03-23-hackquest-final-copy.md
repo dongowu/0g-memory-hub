@@ -20,7 +20,7 @@
 
 ## 3. Short Summary
 
-0G OpenClaw Memory Runtime is an infrastructure layer for long-lived agent workflows. It accepts OpenClaw-style events through a Go orchestrator, reconstructs deterministic workflow state in a Rust runtime, writes checkpoint blobs to 0G Storage, and anchors verification metadata on-chain through a MemoryAnchor contract path. The result is a workflow memory system that is replayable, resumable, and externally verifiable instead of being trapped inside a single running process.
+0G OpenClaw Memory Runtime is an infrastructure layer for long-lived agent workflows. It accepts OpenClaw-style events through a Go orchestrator, reconstructs deterministic workflow state in a Rust runtime, writes checkpoint blobs to 0G Storage, and anchors verification metadata on-chain through a MemoryAnchor contract path. The result is a workflow memory system that is replayable, resumable, re-verifiable, and externally auditable instead of being trapped inside a single running process.
 
 ---
 
@@ -41,10 +41,15 @@ For OpenClaw-style orchestration, this creates three infra problems:
 This project turns agent execution into a durable OpenClaw run memory primitive:
 
 - The **Go orchestrator** exposes an OpenClaw-facing HTTP API, workflow CLI, plus the new run context, checkpoint, hydrate, and trace endpoints.
+- The **Go orchestrator** also exposes a run verify surface (`/v1/openclaw/runs/{id}/verify`, optional `/judge/verify`) for judge-facing integrity checks.
 - The **Rust runtime** deterministically replays events and builds checkpoints.
 - The **0G Storage path** persists checkpoint blobs for long-term recovery.
 - The **0G Chain path** anchors verification metadata such as workflow ID, step index, root hash, and CID hash.
- - The service supports **replay**, **resume**, **health checks**, **run context**, **checkpoint metadata**, **hydrate**, **trace**, **batch ingest**, and **idempotent event ingestion** so workflows behave like real infra rather than a one-shot demo script.
+- The service supports **replay**, **resume**, **verify**, **health checks**, **run context**, **checkpoint metadata**, **hydrate**, **trace**, **batch ingest**, and **idempotent event ingestion** so workflows behave like real infra rather than a one-shot demo script.
+
+Judge-facing verification statement:
+
+> We not only recover after restart, we re-derive the checkpoint and compare it against 0G Storage and MemoryAnchor-linked metadata.
 
 ---
 
@@ -84,6 +89,7 @@ Without that combination, the system would be only a local runtime and not a cre
 - Idempotent event handling by `eventId`
 - Deterministic Rust checkpoint generation
 - Workflow replay, hydrate, and resume
+- Run verify endpoint (`/v1/openclaw/runs/{id}/verify`) for checkpoint re-derivation comparison
 - OpenClaw run context endpoint
 - OpenClaw latest checkpoint endpoint
 - OpenClaw judge-friendly trace endpoint
@@ -136,4 +142,4 @@ Without that combination, the system would be only a local runtime and not a cre
 
 ## 12. Suggested 30-Second Pitch
 
-We built a durable memory layer for OpenClaw-style agent workflows on 0G. The Go service accepts workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and 0G Chain anchors verification metadata. So instead of an agent losing its context when a process dies, the workflow can be replayed, resumed, and externally verified.
+We built a durable memory layer for OpenClaw-style agent workflows on 0G. The Go service accepts workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and MemoryAnchor anchors verification metadata. After restart, the run is hydrated, checkpoint integrity is re-derived and compared against persisted proof, and the run stays traceable for judges.

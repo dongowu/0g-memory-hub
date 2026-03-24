@@ -8,7 +8,7 @@ This flow is optimized for the **0G APAC Hackathon — Agentic Infrastructure & 
 
 This is the strongest judge-facing path because it proves the core thesis:
 
-> **An OpenClaw-style agent run can survive process loss, recover from durable memory, and stay externally verifiable on 0G.**
+> **An OpenClaw-style agent run can survive process loss, recover from durable memory, re-derive its checkpoint, and stay externally verifiable on 0G.**
 
 ### Option B — API Capability Tour
 
@@ -28,14 +28,14 @@ Do **not** pitch this as “a workflow backend” or “a set of APIs.”
 
 Pitch it as:
 
-> **A durable memory runtime for OpenClaw-style agents on 0G: ingest events, checkpoint deterministically, recover after failure, and verify the result.**
+> **A durable memory runtime for OpenClaw-style agents on 0G: ingest events, checkpoint deterministically, recover after failure, verify the restored state, and trace it.**
 
 The judge should leave with exactly four ideas:
 
 1. OpenClaw-style events enter through a real service interface.
 2. Rust turns those events into deterministic checkpoints.
 3. 0G Storage + chain anchor make the memory durable and inspectable.
-4. Even after a restart, the run can be hydrated and traced back.
+4. Even after a restart, the run can be hydrated, verified, and traced back.
 
 ---
 
@@ -47,6 +47,7 @@ In under 3 minutes, prove all four:
 - **checkpoint state is persisted**
 - **restart does not lose memory**
 - **the run has a public verification path**
+- **verification is tied back to run trace, not just a single tx hash**
 
 ---
 
@@ -54,7 +55,7 @@ In under 3 minutes, prove all four:
 
 Use this wording or stay very close:
 
-> “Most agent demos lose memory when the process dies. We built a durable memory layer for OpenClaw-style workflows on 0G. The Go service ingests workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and the chain path anchors verification metadata so the run can be recovered and inspected.”
+> “Most agent demos lose memory when the process dies. We built a durable memory layer for OpenClaw-style workflows on 0G. The Go service ingests workflow events, the Rust runtime deterministically rebuilds state and emits checkpoints, 0G Storage persists those checkpoints, and the MemoryAnchor path anchors verification metadata so the run can be recovered, re-verified, and inspected.”
 
 ---
 
@@ -183,34 +184,48 @@ While restarting, say:
 
 > “Now I’m simulating the exact failure mode most agent demos can’t handle: the process goes away, but the run should still be recoverable.”
 
-### 2:20 - 2:45 Hydrate the run after restart
+### 2:20 - 2:35 Hydrate the run after restart
 
 Run:
 
 ```bash
 curl -X POST http://127.0.0.1:8080/v1/openclaw/runs/run-judge-01/hydrate
-curl http://127.0.0.1:8080/v1/openclaw/runs/run-judge-01/trace
 ```
 
 Say:
 
 - `hydrate` rebuilds the run from persisted checkpoint state.
-- `trace` proves the ordered execution history is still available after restart.
-- This is the core product claim: **memory survives process loss**.
+- This is the recovery half of the claim: **memory survives process loss**.
 
-### 2:45 - 3:00 Show verification proof
+### 2:35 - 2:50 Verify restored state against persisted proof
+
+Run:
+
+```bash
+curl http://127.0.0.1:8080/v1/openclaw/runs/run-judge-01/verify
+curl "http://127.0.0.1:8080/judge/verify?runId=run-judge-01"
+```
+
+Say:
+
+- `verify` is the judge-facing checkpoint integrity step.
+- We do not only recover; we re-derive the checkpoint and compare it with 0G Storage and MemoryAnchor-linked metadata.
+- The verify endpoint and judge console should be live in the demo so the proof can be shown directly instead of described verbally.
+
+### 2:50 - 3:00 Close with trace + explorer linkage
 
 Show one of:
 
 - `latestTxHash` from the API response
 - explorer page
 - `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
+- `GET /v1/openclaw/runs/run-judge-01/trace`
 
 Say:
 
-- Storage is the durable memory layer.
-- MemoryAnchor is the public verification path.
-- So the run is not only recoverable, but externally inspectable.
+- `trace` proves ordered execution context is still intact after verify.
+- Storage is the durable memory layer and MemoryAnchor is the external verification anchor.
+- So the run is recoverable, re-verifiable, and externally inspectable.
 
 ---
 
@@ -218,7 +233,7 @@ Say:
 
 Close with:
 
-> “We’re not just helping an agent act. We’re making its workflow memory durable, recoverable, and verifiable on 0G.”
+> “We’re not just helping an agent act. We’re making its workflow memory durable, recoverable, re-verifiable, and traceable on 0G.”
 
 ---
 
@@ -230,7 +245,7 @@ Because this is OpenClaw-style agent infrastructure: event ingest, deterministic
 
 ### “What is the actual wow moment here?”
 
-The wow moment is that after the service restarts, the same run can still be hydrated and traced back using persisted checkpoint state rather than in-memory context.
+The wow moment is that after restart, the run is hydrated, checkpoint verification is re-derived against persisted proof, and then the run is still traceable end-to-end.
 
 ### “Why 0G instead of ordinary storage?”
 
@@ -238,7 +253,7 @@ Because this project is about durable and inspectable agent memory. 0G Storage p
 
 ### “What happens if the process crashes?”
 
-The process can restart, the checkpoint can be reloaded, and the run can be hydrated and traced again. That is the product claim the demo proves.
+The process can restart, the checkpoint can be reloaded, verification can be re-derived against Storage/MemoryAnchor, and the run can still be traced. That is the product claim the demo proves.
 
 ---
 
@@ -246,7 +261,7 @@ The process can restart, the checkpoint can be reloaded, and the run can be hydr
 
 If live storage / chain is unstable during recording:
 
-1. still show the full ingest → context → restart → hydrate → trace flow
+1. still show the full ingest → checkpoint → restart → hydrate → verify → trace flow
 2. then show previously captured proof from:
    - `docs/evidence/2026-03-22-live-storage-chain-proof.md`
    - `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`

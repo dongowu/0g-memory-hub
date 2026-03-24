@@ -86,11 +86,13 @@ func (f *fakeStorage) DownloadCheckpoint(ctx context.Context, key string) ([]byt
 }
 
 type fakeAnchor struct {
-	mu     sync.Mutex
-	txHash string
-	err    error
-	last   AnchorInput
-	called bool
+	mu        sync.Mutex
+	txHash    string
+	err       error
+	last      AnchorInput
+	called    bool
+	latest    AnchorLatestCheckpoint
+	latestErr error
 }
 
 func (f *fakeAnchor) AnchorCheckpoint(_ context.Context, in AnchorInput) (string, error) {
@@ -105,6 +107,23 @@ func (f *fakeAnchor) AnchorCheckpoint(_ context.Context, in AnchorInput) (string
 		return "0xanchortx", nil
 	}
 	return f.txHash, nil
+}
+
+func (f *fakeAnchor) GetLatestCheckpoint(_ context.Context, workflowID string) (AnchorLatestCheckpoint, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.latestErr != nil {
+		return AnchorLatestCheckpoint{}, f.latestErr
+	}
+	if f.latest.StepIndex == 0 && f.latest.RootHash == "" && f.latest.CIDHash == "" {
+		return AnchorLatestCheckpoint{
+			StepIndex: 0,
+			RootHash:  "",
+			CIDHash:   "",
+			Submitter: "",
+		}, nil
+	}
+	return f.latest, nil
 }
 
 type blockingRuntime struct {
@@ -870,6 +889,264 @@ func TestServiceLatestCheckpointAndRunTrace(t *testing.T) {
 	if trace.Steps[0].SkillName != "search_skill" {
 		t.Fatalf("SkillName = %q, want search_skill", trace.Steps[0].SkillName)
 	}
+}
+
+func TestServiceVerifyRunSuccess(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	storage := &fakeStorage{key: "cid-verify"}
+	svc.SetStorage(storage)
+	anchor := &fakeAnchor{txHash: "0xanchor-verify"}
+	svc.SetAnchor(anchor)
+
+	meta, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
+		WorkflowID: "wf-verify",
+		RunID:      "run-verify",
+		EventID:    "evt-verify-1",
+		EventType:  "tool_result",
+		Actor:      "worker",
+		Payload:    `{"ok":true}`,
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	storedCheckpoint := RuntimeCheckpoint{
+		WorkflowID: meta.WorkflowID,
+		AgentID:    meta.AgentID,
+		LatestStep: uint64(meta.LatestStep),
+		RootHash:   meta.LatestRoot,
+		Status:     RuntimeStatusRunning,
+		Events:     runtimeEventsFromMetadata(meta.Events),
+	}
+	raw, err := json.Marshal(storedCheckpoint)
+	if err != nil {
+		t.Fatalf("marshal checkpoint: %v", err)
+	}
+	storage.download = raw
+	anchor.latest = AnchorLatestCheckpoint{
+		StepIndex: uint64(meta.LatestStep),
+		RootHash:  normalizeBytes32Hex(meta.LatestRoot),
+		CIDHash:   hashToBytes32Hex(meta.LatestCID),
+	}
+
+	verifyResult, err := svc.VerifyRun(context.Background(), "run-verify")
+	if err != nil {
+		t.Fatalf("VerifyRun() error = %v", err)
+	}
+	if !verifyResult.Verified {
+		t.Fatalf("VerifyRun().Verified = false, want true checks=%+v", verifyResult.Checks)
+	}
+	if verifyResult.WorkflowID != "wf-verify" {
+		t.Fatalf("WorkflowID = %q, want wf-verify", verifyResult.WorkflowID)
+	}
+	if verifyResult.LocalMetadata.RunID != "run-verify" {
+		t.Fatalf("RunID = %q, want run-verify", verifyResult.LocalMetadata.RunID)
+	}
+}
+
+func TestServiceVerifyRunStorageMismatch(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	storage := &fakeStorage{key: "cid-verify-storage"}
+	svc.SetStorage(storage)
+	anchor := &fakeAnchor{}
+	svc.SetAnchor(anchor)
+
+	meta, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
+		WorkflowID: "wf-verify-storage",
+		RunID:      "run-verify-storage",
+		EventID:    "evt-verify-storage-1",
+		EventType:  "tool_result",
+		Actor:      "worker",
+		Payload:    `{"ok":true}`,
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	storedCheckpoint := RuntimeCheckpoint{
+		WorkflowID: meta.WorkflowID,
+		AgentID:    meta.AgentID,
+		LatestStep: uint64(meta.LatestStep),
+		RootHash:   "root-storage-mismatch",
+		Status:     RuntimeStatusRunning,
+		Events:     runtimeEventsFromMetadata(meta.Events),
+	}
+	raw, err := json.Marshal(storedCheckpoint)
+	if err != nil {
+		t.Fatalf("marshal checkpoint: %v", err)
+	}
+	storage.download = raw
+	anchor.latest = AnchorLatestCheckpoint{
+		StepIndex: uint64(meta.LatestStep),
+		RootHash:  normalizeBytes32Hex(meta.LatestRoot),
+		CIDHash:   hashToBytes32Hex(meta.LatestCID),
+	}
+
+	verifyResult, err := svc.VerifyRun(context.Background(), "run-verify-storage")
+	if err != nil {
+		t.Fatalf("VerifyRun() error = %v", err)
+	}
+	if verifyResult.Verified {
+		t.Fatalf("VerifyRun().Verified = true, want false checks=%+v", verifyResult.Checks)
+	}
+
+	check := findVerifyCheck(verifyResult.Checks, "storage.root_hash_matches_recomputed")
+	if check == nil {
+		t.Fatalf("missing storage root mismatch check: %+v", verifyResult.Checks)
+	}
+	if check.Passed {
+		t.Fatalf("storage root mismatch check unexpectedly passed: %+v", *check)
+	}
+}
+
+func TestServiceVerifyRunChainMismatch(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	storage := &fakeStorage{key: "cid-verify-chain"}
+	svc.SetStorage(storage)
+	anchor := &fakeAnchor{}
+	svc.SetAnchor(anchor)
+
+	meta, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
+		WorkflowID: "wf-verify-chain",
+		RunID:      "run-verify-chain",
+		EventID:    "evt-verify-chain-1",
+		EventType:  "tool_result",
+		Actor:      "worker",
+		Payload:    `{"ok":true}`,
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	storedCheckpoint := RuntimeCheckpoint{
+		WorkflowID: meta.WorkflowID,
+		AgentID:    meta.AgentID,
+		LatestStep: uint64(meta.LatestStep),
+		RootHash:   meta.LatestRoot,
+		Status:     RuntimeStatusRunning,
+		Events:     runtimeEventsFromMetadata(meta.Events),
+	}
+	raw, err := json.Marshal(storedCheckpoint)
+	if err != nil {
+		t.Fatalf("marshal checkpoint: %v", err)
+	}
+	storage.download = raw
+	anchor.latest = AnchorLatestCheckpoint{
+		StepIndex: uint64(meta.LatestStep),
+		RootHash:  normalizeBytes32Hex(meta.LatestRoot),
+		CIDHash:   hashToBytes32Hex("cid-chain-mismatch"),
+	}
+
+	verifyResult, err := svc.VerifyRun(context.Background(), "run-verify-chain")
+	if err != nil {
+		t.Fatalf("VerifyRun() error = %v", err)
+	}
+	if verifyResult.Verified {
+		t.Fatalf("VerifyRun().Verified = true, want false checks=%+v", verifyResult.Checks)
+	}
+
+	check := findVerifyCheck(verifyResult.Checks, "anchor.cid_hash_matches_latest_cid")
+	if check == nil {
+		t.Fatalf("missing anchor cid hash mismatch check: %+v", verifyResult.Checks)
+	}
+	if check.Passed {
+		t.Fatalf("anchor cid hash mismatch check unexpectedly passed: %+v", *check)
+	}
+}
+
+func TestServiceVerifyRunResolvesByRunID(t *testing.T) {
+	t.Parallel()
+
+	storePath := filepath.Join(t.TempDir(), "workflows.json")
+	store, err := NewFileStore(storePath)
+	if err != nil {
+		t.Fatalf("NewFileStore() error = %v", err)
+	}
+
+	svc := NewService(store)
+	svc.SetRuntime(&fakeRuntime{})
+	storage := &fakeStorage{key: "cid-verify-run-lookup"}
+	svc.SetStorage(storage)
+	anchor := &fakeAnchor{}
+	svc.SetAnchor(anchor)
+
+	meta, err := svc.Ingest(context.Background(), types.WorkflowStepEvent{
+		WorkflowID: "wf-verify-run-lookup",
+		RunID:      "run-verify-run-lookup",
+		EventID:    "evt-verify-run-lookup-1",
+		EventType:  "tool_result",
+		Actor:      "worker",
+		Payload:    `{"ok":true}`,
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	storedCheckpoint := RuntimeCheckpoint{
+		WorkflowID: meta.WorkflowID,
+		AgentID:    meta.AgentID,
+		LatestStep: uint64(meta.LatestStep),
+		RootHash:   meta.LatestRoot,
+		Status:     RuntimeStatusRunning,
+		Events:     runtimeEventsFromMetadata(meta.Events),
+	}
+	raw, err := json.Marshal(storedCheckpoint)
+	if err != nil {
+		t.Fatalf("marshal checkpoint: %v", err)
+	}
+	storage.download = raw
+	anchor.latest = AnchorLatestCheckpoint{
+		StepIndex: uint64(meta.LatestStep),
+		RootHash:  normalizeBytes32Hex(meta.LatestRoot),
+		CIDHash:   hashToBytes32Hex(meta.LatestCID),
+	}
+
+	verifyResult, err := svc.VerifyRun(context.Background(), "run-verify-run-lookup")
+	if err != nil {
+		t.Fatalf("VerifyRun() error = %v", err)
+	}
+	if verifyResult.WorkflowID != "wf-verify-run-lookup" {
+		t.Fatalf("WorkflowID = %q, want wf-verify-run-lookup", verifyResult.WorkflowID)
+	}
+	if verifyResult.LocalMetadata.RunID != "run-verify-run-lookup" {
+		t.Fatalf("RunID = %q, want run-verify-run-lookup", verifyResult.LocalMetadata.RunID)
+	}
+}
+
+func findVerifyCheck(checks []VerifyCheck, name string) *VerifyCheck {
+	for i := range checks {
+		if checks[i].Name == name {
+			return &checks[i]
+		}
+	}
+	return nil
 }
 
 func TestServiceHydrateUsesCallerContext(t *testing.T) {
