@@ -1,313 +1,234 @@
 # 0G OpenClaw Memory Runtime
 
-**0G OpenClaw Memory Runtime** is a durable memory and verification layer for agent workflows. It accepts OpenClaw-style events, rebuilds deterministic workflow state in Rust, persists checkpoints through 0G Storage, and anchors verification metadata on-chain through 0G Chain.
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
-For the **0G APAC Hackathon Track 1: Agentic Infrastructure & OpenClaw Lab**, the core claim of this project is simple:
+**A durable OpenClaw workflow memory layer on 0G that checkpoints agent execution in Rust, persists state to 0G Storage, and anchors verification metadata on-chain.**
 
-> **Agents need memory that survives crashes, resumes cleanly, and can be verified outside the model process.**
+Built for **0G APAC Hackathon — Track 1: Agentic Infrastructure & OpenClaw Lab**.
 
-This repository demonstrates that claim with:
+> **Core claim:** agent memory should survive crashes, resume cleanly, and be verifiable outside the model process.
 
-- **OpenClaw-style ingest** for long-lived workflow execution
-- **Deterministic Rust checkpoints** for replayable agent state
-- **0G Storage persistence** for durable checkpoint blobs
-- **0G Chain anchoring** for public verification metadata
-- **Replay / resume / verify / readiness** for operator-facing workflow reliability
+---
 
-Every stored event keeps the richer OpenClaw semantics judges expect — `runId`, `sessionId`, `traceId`, `parentEventId`, `toolCallId`, `skillName`, `taskId`, and `role` — so the workflow trace can map directly back to what the agent planned, executed, or remembered.
+## Submission snapshot
 
-Judge-facing verification claim:
+| Item | Value |
+|---|---|
+| Track | Agentic Infrastructure & OpenClaw Lab |
+| Repo | `dongowu/0g-memory-hub` |
+| Core stack | Go orchestrator + Rust runtime + Solidity anchor |
+| 0G components used | 0G Storage + 0G Chain |
+| Current proof | Galileo / 0g-testnet |
+| Testnet contract | `0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9` |
+| Explorer | `https://chainscan-galileo.0g.ai/address/0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9` |
 
-> We not only recover the run after restart, we re-derive the checkpoint and compare it against 0G Storage and MemoryAnchor-linked metadata.
+---
 
-## Why this matters for 0G
+## What this project does
 
-- **0G Storage** gives the workflow a durable place to persist checkpoint state outside the running process.
-- **0G Chain** gives the workflow a verifiable anchor for `workflowId`, `stepIndex`, `rootHash`, and `cidHash`.
-- Together, they turn agent execution from an in-memory interaction into a **recoverable and inspectable infra primitive**.
+Most agent demos lose workflow context when the process dies. This project turns workflow memory into a durable infra primitive:
 
-## Judge-Facing Assets
+- **Go orchestrator** ingests OpenClaw-style workflow events
+- **Rust runtime** deterministically replays events and builds checkpoints
+- **0G Storage** persists checkpoint blobs outside the process
+- **0G Chain / MemoryAnchor** anchors `workflowId`, `stepIndex`, `rootHash`, and `cidHash`
+- **Hydrate / verify / trace** proves that a run can be recovered and re-checked after restart
 
-- Final HackQuest submission copy:
-  `docs/submission/2026-03-23-hackquest-final-copy.md`
-- Submission checklist:
-  `docs/submission/2026-03-23-hackquest-submission-checklist.md`
-- 3-minute judge flow:
-  `docs/demo/3min-judge-flow.md`
+Judge-facing verification statement:
 
-## Repository Context
+> We not only recover a run after restart, we re-derive the checkpoint and compare it against persisted 0G Storage state and MemoryAnchor-linked metadata.
 
-This repository now contains two tracks:
+---
 
-- Legacy root implementation (`main.go`, `cmd/`, `core/`, `sdk/`) kept for compatibility.
-- New hackathon track implementation for AI Infra + OpenClaw in:
-  - `apps/orchestrator-go`
-  - `rust/memory-core`
-  - `contracts/MemoryAnchor.sol`
+## What is already implemented
 
-The hackathon target is a workflow runtime where each step can be checkpointed, persisted to 0G Storage, and anchored on 0G Chain.
+- OpenClaw-style single-event ingest
+- OpenClaw-style batch ingest
+- Rich metadata preservation: `runId`, `sessionId`, `traceId`, `parentEventId`, `toolCallId`, `skillName`, `taskId`, `role`
+- Idempotent ingest by `eventId`
+- Deterministic Rust replay and checkpoint generation
+- Persistent Rust runtime transport for long-lived service mode
+- 0G Storage checkpoint upload / download path
+- 0G Chain anchor path through `MemoryAnchor`
+- `replay`, `resume`, `hydrate`, `verify`, `trace`, and readiness checks
+- Judge verify console at `/judge/verify?runId={id}`
 
-## Architecture (Hackathon Track)
+---
 
-### Go orchestrator (`apps/orchestrator-go`)
+## Canonical judging paths
 
-- CLI commands:
-  - `serve`
-  - `workflow start`
-  - `workflow step`
-  - `workflow status`
-  - `workflow replay`
-  - `workflow resume`
-  - `workflow verify`
-- Responsibilities:
-  - Expose an OpenClaw-facing HTTP API
-  - Accept normalized OpenClaw-like step events
-  - Support single-event and batched ingest
-  - Keep ingest idempotent by `eventId`
-  - Execute workflow creation + step append atomically inside the service
-  - Call Rust runtime over persistent stdio JSON transport
-  - Use HTTP timeouts and graceful shutdown for long-running service mode
-  - Upload checkpoint blobs through 0G Storage adapter
-  - Anchor checkpoint metadata through MemoryAnchor chain adapter
-  - Persist local workflow metadata
+Use these paths for review and demo:
 
-### Rust core (`rust/memory-core`)
+| Component | Path |
+|---|---|
+| Go orchestrator | `apps/orchestrator-go` |
+| Rust runtime | `rust/memory-core` |
+| Solidity contract | `contracts/MemoryAnchor.sol` |
+| Quickstart | `QUICKSTART.md` |
+| Demo docs | `docs/demo/` |
+| Submission docs | `docs/submission/` |
+| Evidence docs | `docs/evidence/` |
 
-- Deterministic workflow state machine
-- Event append / replay
-- Checkpoint and root hash generation
-- Stdio JSON RPC binary: `memory-core-rpc`
+Legacy root paths (`main.go`, `cmd/`, `core/`, `sdk/`) are compatibility leftovers and are **not** the main hackathon judging path.
 
-### Solidity contract (`contracts/MemoryAnchor.sol`)
+---
 
-- Workflow-centric anchoring by `workflowId`
-- Stores latest checkpoint and full history
-- Anchor fields include `stepIndex`, `rootHash`, `cidHash`, `timestamp`, `submitter`
+## Judge quick links
 
-## Repository Layout (Relevant Paths)
+| What | Path |
+|---|---|
+| Final HackQuest copy | `docs/submission/2026-03-23-hackquest-final-copy.md` |
+| Submission checklist | `docs/submission/2026-03-23-hackquest-submission-checklist.md` |
+| 3-minute demo flow | `docs/demo/3min-judge-flow.md` |
+| Judge checklist | `docs/demo/judge-checklist.md` |
+| Live storage + chain proof | `docs/evidence/2026-03-22-live-storage-chain-proof.md` |
+| Live workflow proof | `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md` |
+| Live readiness proof | `docs/evidence/2026-03-23-live-http-readiness-proof.md` |
+| Galileo deployment proof | `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md` |
+
+---
+
+## Architecture
 
 ```text
-apps/orchestrator-go/
-  cmd/
-  internal/config/
-  internal/openclaw/
-  internal/workflow/
-  internal/ogstorage/
-  internal/ogchain/
-rust/memory-core/
-  src/
-  tests/
-contracts/
-  MemoryAnchor.sol
-scripts/
-  deploy.js
-  demo.sh
-docs/demo/
+OpenClaw-style events
+        |
+        v
+Go orchestrator
+  - ingest / batch ingest
+  - context / checkpoint / hydrate / verify / trace
+        |
+        v
+Rust runtime
+  - deterministic replay
+  - checkpoint generation
+  - root hash derivation
+        |
+        +--> 0G Storage
+        |      - checkpoint persistence
+        |
+        +--> 0G Chain / MemoryAnchor
+               - workflow anchor metadata
 ```
 
-## Environment
+---
 
-### Orchestrator env vars
+## Quick start
+
+### Prerequisites
+
+- Go **1.26.x**
+- Rust stable
+- Node.js **20 - 24**
+- npm
+
+### Fast local setup
 
 ```bash
-ORCH_DATA_DIR=.orchestrator
-ORCH_RUNTIME_BINARY_PATH=memory-core-rpc
-ORCH_STORAGE_RPC_URL=https://indexer-storage-testnet-turbo.0g.ai
-ORCH_CHAIN_RPC_URL=https://evmrpc-testnet.0g.ai
-ORCH_CHAIN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
-ORCH_CHAIN_PRIVATE_KEY=0x...
-ORCH_CHAIN_ID=16602
-ORCH_HTTP_ADDR=127.0.0.1:8080
+npm install
+cd rust/memory-core && cargo test --offline && cargo build --bin memory-core-rpc
+cd ../../apps/orchestrator-go && go test ./...
 ```
 
-### Hardhat env vars
+Start the service:
 
 ```bash
-OG_CHAIN_RPC=https://evmrpc-testnet.0g.ai
-OG_TESTNET_CHAIN_ID=16602
-PRIVATE_KEY=0x...
-```
-
-### Need a fresh testnet wallet?
-
-Generate one locally:
-
-```bash
-npm run wallet:new
-```
-
-Generate and also save it to `.wallets/` locally:
-
-```bash
-npm run wallet:new:save
-```
-
-Then fund the printed address from:
-
-- https://faucet.0g.ai
-- https://cloud.google.com/application/web3/faucet/0g/galileo
-
-## Build and Test
-
-### Rust core
-
-```bash
-cd rust/memory-core
-cargo test
-cargo run --bin memory-core-rpc
-```
-
-### Go orchestrator
-
-```bash
+export ORCH_RUNTIME_BINARY_PATH="$(pwd)/rust/memory-core/target/debug/memory-core-rpc"
 cd apps/orchestrator-go
-/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go test ./...
-/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . serve
-/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow start demo-wf
+go run . serve
 ```
 
-> Note: on March 22, 2026, live probing showed the standard indexer root RPC was unstable while turbo REST endpoints were healthy. The orchestrator keeps the official SDK path first and now includes a generalized direct fallback path for checkpoint uploads when the root RPC path is unhealthy.
-
-## OpenClaw HTTP API
-
-The orchestrator can now run as a long-lived service:
+Check readiness:
 
 ```bash
-cd apps/orchestrator-go
-/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . serve
+curl http://127.0.0.1:8080/health
 ```
 
-Available endpoints:
+For full setup and manual commands, see `QUICKSTART.md`.
 
-- `GET /health`
-- `POST /v1/openclaw/ingest`
-- `POST /v1/openclaw/ingest/batch`
-- `GET /v1/workflows/{id}`
-- `POST /v1/workflows/{id}/resume`
-- `GET /v1/workflows/{id}/replay`
-- `GET /v1/openclaw/runs/{id}/context` (run metadata + recent events)
-- `GET /v1/openclaw/runs/{id}/checkpoint/latest` (latest checkpoint root/cid/tx)
-- `POST /v1/openclaw/runs/{id}/hydrate` (resume from the persisted checkpoint)
-- `GET /v1/openclaw/runs/{id}/verify` (re-derive + compare against persisted checkpoint metadata)
-- `GET /v1/openclaw/runs/{id}/trace` (judge-friendly run timeline)
-- `GET /judge/verify?runId={id}` (judge-facing verify console)
+---
 
-Example single ingest:
+## Recommended demo path
+
+For judges, the strongest story is:
+
+1. **ingest** an OpenClaw-style run
+2. show **checkpoint/latest**
+3. stop and restart the service
+4. **hydrate** the run
+5. **verify** the restored checkpoint
+6. show **trace**
+7. close with explorer / evidence proof
+
+Fast local smoke path:
 
 ```bash
-curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest \
-  -H 'Content-Type: application/json' \
-  -d '{"runId":"demo-wf","eventId":"evt-1","eventType":"tool_result","actor":"worker","payload":{"ok":true}}'
+./scripts/demo_verify_smoke.sh
 ```
 
-Example batch ingest:
+Full narration and manual flow:
 
-```bash
-curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest/batch \
-  -H 'Content-Type: application/json' \
-  -d '{"events":[
-    {"runId":"demo-wf","eventId":"evt-1","eventType":"tool_call","actor":"planner","payload":{"tool":"search"}},
-    {"runId":"demo-wf","eventId":"evt-2","eventType":"tool_result","actor":"worker","payload":{"ok":true}}
-  ]}'
-```
-
-Duplicate `eventId` submissions are treated as idempotent retries and will not append duplicate workflow steps.
-
-`GET /health` now returns a structured readiness report:
-
-- `200 OK` when required components are ready
-- `503 Service Unavailable` when a required component is missing or unhealthy
-
-Current readiness behavior:
-
-- `runtime`: active probe through the Rust stdio runtime client
-- `storage`: lightweight live probe against the configured 0G indexer `/node/status` endpoint, with bounded timeout and turbo indexer fallback for reachability checks
-- `anchor`: optional lightweight live probe against the configured chain RPC using `eth_chainId` and `eth_blockNumber`
-
-This means `/health` can now return `503` not only when a required dependency is missing, but also when it is configured yet currently unreachable.
-
-### Contract
-
-```bash
-npm run wallet:new
-npm run preflight:testnet
-npx hardhat compile
-npx hardhat test test/MemoryAnchor.js
-npx hardhat run scripts/deploy.js --network 0g-testnet
-npm run deploy:proof
-npm run evidence:testnet
-```
-
-After deployment, point the orchestrator at the deployed anchor contract:
-
-```bash
-export ORCH_CHAIN_CONTRACT_ADDRESS=$(node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('deployments/0g-testnet/MemoryAnchor.latest.json','utf8'));process.stdout.write(d.contractAddress)")
-```
-
-`scripts/deploy.js` now deploys `MemoryAnchor` by default for the judge path on Galileo.
-
-When `RUN_ANCHOR_PROOF=1` (or `npm run deploy:proof`) is enabled, the deploy script also:
-
-- submits one sample `anchorCheckpoint(...)` transaction,
-- reads the checkpoint back from chain,
-- prints explorer-ready transaction links when configured,
-- writes deployment metadata to `deployments/<network>/MemoryAnchor.latest.json`.
-
-`npm run preflight:testnet` prints the exact environment and orchestrator exports needed before a live 0G Galileo deployment.
-
-`npm run evidence:testnet` converts the latest deployment artifact JSON into a judge-facing markdown file under `docs/evidence/`.
-
-## Live Evidence
-
-- Storage + chain proof record:
-  `docs/evidence/2026-03-22-live-storage-chain-proof.md`
-- Live orchestrator workflow proof:
-  `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
-- Live HTTP readiness proof:
-  `docs/evidence/2026-03-23-live-http-readiness-proof.md`
-- Live Galileo deployment proof:
-  `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
-- Reproduction scripts:
-  - `node scripts/live_storage_flow_proof.cjs`
-  - `OG_STORAGE_ROOT=<root> node scripts/anchor_storage_root.cjs`
-
-## Demo Paths
-
-### Local non-RPC demo (always available)
-
-- Start workflow
-- Show status
-- Replay local metadata trace
-- Or run the HTTP API and ingest local OpenClaw events
-
-This does not require live 0G RPC.
-
-### Full 0G demo (requires reachable RPC and contract)
-
-- Build `memory-core-rpc` and expose it via `ORCH_RUNTIME_BINARY_PATH`
-- Call `workflow step` to create checkpoint and upload to Storage
-- Anchor checkpoint using chain client path
-- Show `ingest -> checkpoint -> restart -> hydrate -> verify -> trace`
-- Use `/v1/openclaw/runs/{id}/verify` to prove checkpoint re-derivation and Storage / MemoryAnchor linkage
-- Or run `./scripts/demo_verify_smoke.sh` to replay the same judge flow quickly against a running service
-
-See:
-
-- `QUICKSTART.md`
 - `docs/demo/3min-judge-flow.md`
 - `docs/demo/judge-checklist.md`
 
-CLI fallback for judge-facing JSON:
+---
+
+## HTTP surface
+
+### Health and judge surface
+
+- `GET /health`
+- `GET /judge/verify?runId={id}`
+
+### OpenClaw ingest
+
+- `POST /v1/openclaw/ingest`
+- `POST /v1/openclaw/ingest/batch`
+
+### Workflow and run inspection
+
+- `GET /v1/workflows/{id}`
+- `POST /v1/workflows/{id}/resume`
+- `GET /v1/workflows/{id}/replay`
+- `GET /v1/openclaw/runs/{id}/context`
+- `GET /v1/openclaw/runs/{id}/checkpoint/latest`
+- `POST /v1/openclaw/runs/{id}/hydrate`
+- `GET /v1/openclaw/runs/{id}/verify`
+- `GET /v1/openclaw/runs/{id}/trace`
+
+---
+
+## Verification status
+
+Current repository checks:
+
+- `apps/orchestrator-go`: tests pass with **Go 1.26.0**
+- `rust/memory-core`: `cargo test --offline` passes
+- `contracts/MemoryAnchor.sol`: Hardhat tests pass
+
+Recommended verification commands:
 
 ```bash
-cd apps/orchestrator-go
-/Users/dongowu/.local/share/mise/installs/go/1.26.0/bin/go run . workflow verify <run-id>
+cd rust/memory-core && cargo test --offline
+cd ../../apps/orchestrator-go && go test ./...
+cd ../.. && npx hardhat test test/MemoryAnchor.js
 ```
 
-## Current MVP Boundaries
+---
 
-- Runtime subprocess transport is persistent for long-lived server use.
-- Cancelled HTTP/runtime requests force a fresh Rust child on the next call to avoid stale stdio reads.
-- Storage and chain adapters are real client code, but live network behavior depends on your RPC endpoints.
-- Contract deployment and explorer verification depend on your configured network and account.
-- OpenClaw ingest is synchronous and currently uses a local file-backed workflow store.
+## Current boundaries
+
+- This is a **workflow runtime + verification layer**, not a full consumer AI product
+- OpenClaw ingest is synchronous and currently backed by a local file store
+- Live storage / chain behavior depends on reachable RPCs and funded credentials
+- Current repo proof is **testnet / Galileo**, not mainnet
+- Demo video link and X/Twitter submission link still need to be attached manually for final submission
+
+---
+
+## Related docs
+
+- `QUICKSTART.md`
+- `0G_INTEGRATION.md`
+- `docs/architecture/2026-03-21-openclaw-memory-runtime-design.md`
+- `docs/submission/2026-03-23-hackquest-form-answers.md`
