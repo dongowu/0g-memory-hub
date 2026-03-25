@@ -1,12 +1,19 @@
 # Judge Checklist
 
-Use this checklist before recording/submitting demo evidence.
+Use this checklist before recording or submitting demo evidence.
 
 ## Required Pre-Flight Checks
 
 - `apps/orchestrator-go` tests pass.
 - `rust/memory-core` tests pass.
 - `npx hardhat compile` passes.
+- Galileo demo env is loaded:
+  - `ORCH_RUNTIME_BINARY_PATH`
+  - `ORCH_STORAGE_RPC_URL`
+  - `ORCH_CHAIN_RPC_URL`
+  - `ORCH_CHAIN_CONTRACT_ADDRESS`
+  - `ORCH_CHAIN_PRIVATE_KEY`
+  - `ORCH_CHAIN_ID`
 - `go run . serve` starts cleanly.
 - `./scripts/demo_verify_smoke.sh` completes against a running service.
 - `GET /health` works.
@@ -16,12 +23,12 @@ Use this checklist before recording/submitting demo evidence.
 - `GET /v1/openclaw/runs/{id}/verify` works and returns structured verification data.
 - `GET /v1/openclaw/runs/{id}/trace` works.
 - `GET /judge/verify?runId={id}` opens and shows the judge console.
-- `./scripts/demo_verify_smoke.sh` runs cleanly against the local service.
 
-## Full 0G Checks (if enabled)
+## Full 0G Checks
 
 - `workflow step` returns non-empty `latest_root`.
 - `workflow step` returns non-empty `latest_cid`.
+- `workflow step` returns non-empty `latest_tx_hash`.
 - MemoryAnchor contract address is recorded.
 - At least one chain tx hash is available.
 - Explorer link is included in submission notes.
@@ -45,8 +52,9 @@ Use this checklist before recording/submitting demo evidence.
 ## Submission Assets Checklist
 
 - README updated with architecture and demo path.
-- QUICKSTART updated with exact MVP commands.
+- QUICKSTART updated with exact smoke + live 0G commands.
+- `docs/submission/README.md` included.
 - `docs/demo/3min-judge-flow.md` included.
 - `scripts/demo_verify_smoke.sh` included and syntax-checked.
-- demo commands verified end-to-end before recording.
-- repo has recent substantive commits in hackathon period.
+- Demo commands verified end-to-end before recording.
+- Repo has recent substantive commits in the hackathon period.

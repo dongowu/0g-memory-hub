@@ -70,14 +70,25 @@ Use **two terminals** and optionally one browser tab:
 Pre-build before recording so the video stays fast:
 
 ```bash
+export REPO_ROOT="$(pwd)"
+
 cd rust/memory-core
 cargo build --bin memory-core-rpc
 
 cd ../../apps/orchestrator-go
 go test ./...
-export ORCH_RUNTIME_BINARY_PATH="../../rust/memory-core/target/debug/memory-core-rpc"
+
+export ORCH_RUNTIME_BINARY_PATH="$REPO_ROOT/rust/memory-core/target/debug/memory-core-rpc"
+export ORCH_DATA_DIR="$REPO_ROOT/.orchestrator"
+export ORCH_STORAGE_RPC_URL="https://indexer-storage-testnet-turbo.0g.ai"
+export ORCH_CHAIN_RPC_URL="https://evmrpc-testnet.0g.ai"
+export ORCH_CHAIN_CONTRACT_ADDRESS="0xE233C1c6f3374bf8F29e6902Ed181b694f6d7BD9"
+export ORCH_CHAIN_PRIVATE_KEY="0x..."
+export ORCH_CHAIN_ID="16602"
 go run . serve
 ```
+
+> `ORCH_CHAIN_PRIVATE_KEY` must be a funded Galileo key. The live judge demo uses the real Storage + MemoryAnchor path.
 
 Fast rehearsal path from the repo root:
 
@@ -116,7 +127,7 @@ curl http://127.0.0.1:8080/health
 
 Say:
 
-- The service probes runtime, storage, and optional anchor readiness.
+- The service probes runtime, storage, and chain-anchor readiness.
 - This is a long-running infra component, not a one-shot script.
 
 ### 0:35 - 1:20 Ingest a real OpenClaw-style run
@@ -163,7 +174,7 @@ curl -X POST http://127.0.0.1:8080/v1/openclaw/ingest/batch \
 Say:
 
 - This is richer than plain event logging.
-- We preserve run/session/trace/tool/task metadata so the workflow remains intelligible.
+- We preserve run / session / trace / tool / task metadata so the workflow remains intelligible.
 - The response should show `latestStep`, `latestRoot`, and ideally `latestCid` / `latestTxHash`.
 
 ### 1:20 - 1:50 Show the memory is now inspectable
@@ -259,32 +270,6 @@ The wow moment is that after restart, the run is hydrated, checkpoint verificati
 
 Because this project is about durable and inspectable agent memory. 0G Storage persists the checkpoint, and the chain path adds a verification surface outside the agent process.
 
-### “What happens if the process crashes?”
+### “What must already be configured before recording?”
 
-The process can restart, the checkpoint can be reloaded, verification can be re-derived against Storage/MemoryAnchor, and the run can still be traced. That is the product claim the demo proves.
-
----
-
-## Backup Mode (if live RPC is unstable)
-
-If live storage / chain is unstable during recording:
-
-1. still show the full ingest → checkpoint → restart → hydrate → verify → trace flow
-2. then show previously captured proof from:
-   - `docs/evidence/2026-03-22-live-storage-chain-proof.md`
-   - `docs/evidence/2026-03-23-live-orchestrator-workflow-proof.md`
-
-Be explicit:
-
-> “The recovery flow is live; the 0G proof page is pre-captured because endpoint stability can vary.”
-
-That is much better than pretending the network issue did not happen.
-
----
-
-## What to Avoid Saying
-
-- Don’t lead with endpoints before stating the crash-recovery problem.
-- Don’t describe this as only “workflow CRUD.”
-- Don’t spend most of the video on contract code.
-- Don’t claim “AI infra” without proving recovery after restart.
+A funded Galileo private key, the current or freshly deployed `MemoryAnchor` address, and the runtime binary path.
