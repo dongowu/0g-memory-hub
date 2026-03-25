@@ -205,6 +205,12 @@
         overflow-x: auto;
       }
 
+      .checks-summary {
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
       table.checks {
         width: 100%;
         border-collapse: collapse;
@@ -258,6 +264,12 @@
         color: #fee2e2;
         border-color: rgba(220, 38, 38, 0.65);
         background: rgba(220, 38, 38, 0.2);
+      }
+
+      .pill.unknown {
+        color: #fef3c7;
+        border-color: rgba(217, 119, 6, 0.6);
+        background: rgba(217, 119, 6, 0.2);
       }
 
       .mono {
@@ -414,9 +426,9 @@
           return "unknown";
         }
 
-        function setVerifiedBadge(value) {
-          verifiedBadge.className = "badge " + (value === true ? "ok" : value === false ? "bad" : "unknown");
-          verifiedBadge.textContent = value === true ? "VERIFIED" : value === false ? "FAILED" : "UNKNOWN";
+        function setVerifiedBadge(kind, label) {
+          verifiedBadge.className = "badge " + (kind || "unknown");
+          verifiedBadge.textContent = label || "UNKNOWN";
         }
 
         function setState(kind, label, summary) {
@@ -483,11 +495,16 @@
             return;
           }
 
+          var passCount = 0;
+          var failCount = 0;
+
           var rows = checks
             .map(function (check, index) {
               var safe = check && typeof check === "object" ? check : {};
               var passed = safe.passed === true;
               var failed = safe.passed === false;
+              if (passed) passCount += 1;
+              if (failed) failCount += 1;
               var rowClass = passed ? "check-pass" : failed ? "check-fail" : "";
               var pillClass = passed ? "ok" : failed ? "bad" : "unknown";
               var pillText = passed ? "PASS" : failed ? "FAIL" : "UNKNOWN";
@@ -519,6 +536,13 @@
             .join("");
 
           el.innerHTML =
+            '<div class="checks-summary">Check Summary: ' +
+            passCount +
+            " passed, " +
+            failCount +
+            " failed, " +
+            Math.max(checks.length - passCount - failCount, 0) +
+            " unknown.</div>" +
             '<div class="checks-table-wrap">' +
             '<table class="checks">' +
             "<thead><tr><th>Check</th><th>Passed</th><th>Expected</th><th>Actual</th><th>Message</th></tr></thead>" +
@@ -542,6 +566,25 @@
           return json;
         }
 
+        function hasSourceFailure(check) {
+          if (!check || check.passed !== false) return false;
+          var hasExpected = check.expected !== undefined && check.expected !== null && check.expected !== "";
+          var hasActual = check.actual !== undefined && check.actual !== null && check.actual !== "";
+          var hasMessage = check.message !== undefined && check.message !== null && check.message !== "";
+          return hasMessage && !hasExpected && !hasActual;
+        }
+
+        function errorText(err, fallbackStatus) {
+          if (!err) return fallbackStatus || "request failed";
+          if (typeof err === "string") return err;
+          if (typeof err === "object") {
+            if (err.message) return err.message;
+            if (err.code && err.message) return err.code + ": " + err.message;
+            if (err.code) return err.code;
+          }
+          return fallbackStatus || "request failed";
+        }
+
         function render(payload, url) {
           var recomputed = payload.recomputed || payload.recomputedCheckpoint || {};
           var storage = payload.storage || payload.storageCheckpoint || {};
@@ -551,8 +594,8 @@
                 return check && check.passed === false;
               })
             : [];
+          var sourceFailures = failedChecks.filter(hasSourceFailure);
 
-          setVerifiedBadge(payload.verified);
           metaLine.textContent =
             "runId=" +
             normalizeValue(payload.runId) +
@@ -566,11 +609,21 @@
             url;
 
           if (payload.verified === true) {
+            setVerifiedBadge("ok", "VERIFIED");
             setState("ok", "Verification passed", "Recomputed runtime state, storage checkpoint, and chain anchor all match.");
+          } else if (sourceFailures.length > 0) {
+            setVerifiedBadge("unknown", "SOURCE ERROR");
+            setState(
+              "unknown",
+              "Verification source failure",
+              "Verification could not complete cleanly because one or more sources were unavailable or returned invalid data."
+            );
           } else if (payload.verified === false) {
             var headline = failedChecks.length > 0 ? failedChecks[0].name || "verification mismatch" : "verification mismatch";
+            setVerifiedBadge("bad", "MISMATCH");
             setState("bad", "Verification mismatch", "One or more checks failed. Start with: " + headline + ".");
           } else {
+            setVerifiedBadge("unknown", "UNKNOWN");
             setState("unknown", "Verification unknown", "The response did not provide a conclusive verification result.");
           }
 
@@ -596,7 +649,7 @@
           showError("");
           verifyBtn.disabled = true;
           verifyBtn.textContent = "Verifying...";
-          setVerifiedBadge(undefined);
+          setVerifiedBadge("unknown", "VERIFYING");
           setState("unknown", "Verifying", "Fetching verification evidence from the API.");
 
           var url = "/v1/openclaw/runs/" + encodeURIComponent(runId) + "/verify";
@@ -616,11 +669,13 @@
             render(payload, url);
 
             if (!response.ok) {
-              var msg = (json && (json.error || json.message)) || ("HTTP " + response.status);
+              var msg = errorText(json && (json.error || json.message), "HTTP " + response.status);
+              setVerifiedBadge("bad", "REQUEST FAILED");
               setState("bad", "Request failed", "The verify endpoint returned an error. Check the raw JSON and message below.");
               showError("Request failed: " + msg);
             }
           } catch (err) {
+            setVerifiedBadge("bad", "RUNTIME FAILURE");
             setState("bad", "Runtime failure", "The browser could not load verification evidence. Confirm the service is running and try again.");
             showError(err && err.message ? err.message : "verification request failed");
             rawJson.textContent = "{}";
