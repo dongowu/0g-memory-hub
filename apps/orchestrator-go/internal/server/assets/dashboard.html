@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>0G Memory Hub Dashboard</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --panel-2: #1f2937;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --ok: #16a34a;
+        --bad: #dc2626;
+        --warn: #d97706;
+        --line: #374151;
+        --accent: #2563eb;
+        --accent-hover: #1d4ed8;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg); color: var(--text);
+      }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+      /* Layout */
+      .topbar {
+        background: var(--panel); border-bottom: 1px solid var(--line);
+        padding: 14px 24px; display: flex; align-items: center; gap: 16px;
+      }
+      .topbar h1 { font-size: 18px; letter-spacing: 0.3px; }
+      .topbar .sep { color: var(--line); }
+      .topbar nav a {
+        color: var(--muted); text-decoration: none; font-size: 14px; padding: 4px 10px;
+        border-radius: 6px; transition: all 0.15s;
+      }
+      .topbar nav a:hover, .topbar nav a.active { color: var(--text); background: var(--panel-2); }
+      .topbar .health-dot {
+        width: 10px; height: 10px; border-radius: 50%; margin-left: auto;
+        background: var(--muted); transition: background 0.3s;
+      }
+      .topbar .health-dot.ok { background: var(--ok); }
+      .topbar .health-dot.bad { background: var(--bad); }
+      .topbar .health-label { font-size: 12px; color: var(--muted); }
+
+      .container { max-width: 1280px; margin: 0 auto; padding: 24px 20px; }
+
+      /* Views */
+      .view { display: none; }
+      .view.active { display: block; }
+
+      /* Stats bar */
+      .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+      .stat-card {
+        background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+      }
+      .stat-card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+      .stat-card .value { font-size: 28px; font-weight: 700; }
+      .stat-card .value.ok { color: #4ade80; }
+      .stat-card .value.bad { color: #f87171; }
+
+      /* Runs table */
+      .runs-table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+      table.runs { width: 100%; border-collapse: collapse; font-size: 13px; }
+      table.runs th {
+        text-align: left; padding: 12px 14px; font-size: 11px; letter-spacing: 0.05em;
+        text-transform: uppercase; color: var(--muted); background: var(--panel-2);
+        border-bottom: 1px solid var(--line);
+      }
+      table.runs td { padding: 10px 14px; border-bottom: 1px solid rgba(55,65,81,0.4); vertical-align: middle; }
+      table.runs tr:hover td { background: rgba(37,99,235,0.06); }
+      table.runs .clickable { cursor: pointer; color: var(--accent); text-decoration: none; }
+      table.runs .clickable:hover { text-decoration: underline; }
+
+      .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 700; border: 1px solid transparent; }
+      .pill.running { color: #bfdbfe; border-color: rgba(37,99,235,0.5); background: rgba(37,99,235,0.15); }
+      .pill.completed { color: #dcfce7; border-color: rgba(22,163,74,0.5); background: rgba(22,163,74,0.15); }
+      .pill.paused { color: #fef3c7; border-color: rgba(217,119,6,0.5); background: rgba(217,119,6,0.15); }
+      .pill.ok { color: #dcfce7; border-color: rgba(22,163,74,0.6); background: rgba(22,163,74,0.18); }
+      .pill.bad { color: #fee2e2; border-color: rgba(220,38,38,0.65); background: rgba(220,38,38,0.2); }
+
+      .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+      .empty-state p { margin-top: 8px; font-size: 14px; }
+
+      /* Detail view */
+      .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 14px; text-decoration: none; margin-bottom: 16px; }
+      .back-link:hover { text-decoration: underline; }
+      .detail-header { margin-bottom: 20px; }
+      .detail-header h2 { font-size: 22px; margin-bottom: 4px; }
+      .detail-header .meta-row { color: var(--muted); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; }
+
+      .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 20px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      .card h3 {
+        margin: 0; font-size: 13px; letter-spacing: 0.2px; background: var(--panel-2);
+        padding: 10px 14px; border-bottom: 1px solid var(--line);
+      }
+      .card .body { padding: 12px 14px; }
+
+      table.kv { width: 100%; border-collapse: collapse; }
+      table.kv td { border-bottom: 1px solid rgba(55,65,81,0.4); vertical-align: top; padding: 6px 2px; font-size: 13px; }
+      table.kv td.key { color: var(--muted); width: 40%; }
+      table.kv td.value { word-break: break-all; }
+
+      .proof-link { color: var(--accent); text-decoration: none; font-size: 12px; }
+      .proof-link:hover { text-decoration: underline; }
+
+      /* Timeline */
+      .timeline { position: relative; padding-left: 24px; }
+      .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+      .timeline-item { position: relative; padding: 10px 0 10px 12px; }
+      .timeline-item::before {
+        content: ''; position: absolute; left: -20px; top: 14px; width: 10px; height: 10px;
+        border-radius: 50%; border: 2px solid var(--accent); background: var(--bg);
+      }
+      .timeline-item .step-header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .timeline-item .step-header .step-idx { font-size: 11px; color: var(--muted); }
+      .timeline-item .step-header .event-type { font-size: 12px; font-weight: 700; }
+      .timeline-item .step-body { margin-top: 4px; font-size: 12px; color: var(--muted); word-break: break-word; }
+
+      /* Verify panel */
+      .verify-panel { margin-top: 20px; }
+      .verify-btn {
+        border: 0; border-radius: 8px; padding: 10px 20px; background: var(--accent);
+        color: #fff; font-weight: 700; cursor: pointer; font-size: 14px; transition: background 0.15s;
+      }
+      .verify-btn:hover { background: var(--accent-hover); }
+      .verify-btn:disabled { opacity: 0.6; cursor: wait; }
+
+      .checks-table-wrap { overflow-x: auto; margin-top: 12px; }
+      table.checks { width: 100%; border-collapse: collapse; font-size: 13px; }
+      table.checks th, table.checks td { padding: 8px 10px; border-bottom: 1px solid rgba(55,65,81,0.5); text-align: left; }
+      table.checks th { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+      tr.check-pass { background: rgba(22,163,74,0.08); }
+      tr.check-fail { background: rgba(220,38,38,0.1); }
+
+      /* Health view */
+      .health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+      .health-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+      .health-card .comp-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+      .health-card .comp-status { font-size: 13px; }
+      .health-card .comp-msg { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+      /* Merkle Tree visualization */
+      .merkle-tree-container {
+        overflow-x: auto;
+        padding: 16px 0;
+      }
+      .merkle-tree {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        min-width: fit-content;
+      }
+      .merkle-level {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .merkle-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+      .merkle-node-box {
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-family: ui-monospace, monospace;
+        word-break: break-all;
+        max-width: 140px;
+        text-align: center;
+        border: 2px solid transparent;
+        transition: all 0.2s;
+      }
+      .merkle-node-box.leaf {
+        background: rgba(37,99,235,0.2);
+        border-color: var(--accent);
+      }
+      .merkle-node-box.internal {
+        background: rgba(22,163,74,0.15);
+        border-color: #16a34a;
+      }
+      .merkle-node-box.root {
+        background: rgba(234,179,8,0.2);
+        border-color: #eab308;
+        font-weight: 700;
+      }
+      .merkle-node-box.highlight {
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.5);
+        transform: scale(1.05);
+      }
+      .merkle-node-label {
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .merkle-connector {
+        width: 2px;
+        height: 16px;
+        background: var(--line);
+      }
+      .merkle-labels-row {
+        display: flex;
+        gap: 4px;
+        justify-content: center;
+      }
+      .merkle-label {
+        font-size: 9px;
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+        min-width: 60px;
+        text-align: center;
+      }
+
+      /* Root Evolution */
+      .root-evolution {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .root-evolution-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 12px;
+        background: var(--panel-2);
+        border-radius: 8px;
+        font-size: 12px;
+      }
+      .root-evolution-item.current {
+        border: 1px solid var(--accent);
+      }
+      .root-evolution-item .step-badge {
+        min-width: 60px;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .root-evolution-item .root-value {
+        font-family: ui-monospace, monospace;
+        color: var(--muted);
+        word-break: break-all;
+        flex: 1;
+      }
+      .root-evolution-item.current .root-value {
+        color: var(--text);
+      }
+
+      @media (max-width: 600px) {
+        .topbar { flex-wrap: wrap; }
+        .stats-bar { grid-template-columns: 1fr 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <h1>0G Memory Hub</h1>
+      <span class="sep">|</span>
+      <nav>
+        <a href="#" data-view="runs" class="active">Runs</a>
+        <a href="#" data-view="merkle">Merkle Tree</a>
+        <a href="#" data-view="health">Health</a>
+        <a href="/judge/verify">Verify Console</a>
+      </nav>
+      <div id="healthDot" class="health-dot"></div>
+      <span id="healthLabel" class="health-label">checking...</span>
+    </div>
+
+    <div class="container">
+      <!-- RUNS LIST VIEW -->
+      <div id="runsView" class="view active">
+        <div id="statsBar" class="stats-bar"></div>
+        <div id="runsTableWrap" class="runs-table-wrap">
+          <div class="empty-state" id="runsEmpty">
+            <p>Loading runs...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- RUN DETAIL VIEW -->
+      <div id="detailView" class="view">
+        <a href="#" class="back-link" id="backToRuns">&larr; Back to runs</a>
+        <div class="detail-header" id="detailHeader"></div>
+        <div class="detail-grid" id="detailCards"></div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <h3>Event Timeline</h3>
+          <div class="body">
+            <div id="timeline" class="timeline"></div>
+          </div>
+        </div>
+
+        <div class="verify-panel">
+          <button class="verify-btn" id="detailVerifyBtn">Run Verification</button>
+          <div id="verifyResult"></div>
+        </div>
+      </div>
+
+      <!-- HEALTH VIEW -->
+      <div id="healthView" class="view">
+        <h2 style="margin-bottom: 16px;">System Health</h2>
+        <div id="healthGrid" class="health-grid"></div>
+      </div>
+
+      <!-- MERKLE TREE VIEW -->
+      <div id="merkleView" class="view">
+        <h2 style="margin-bottom: 16px;">Merkle Tree Verification</h2>
+
+        <div class="card" style="margin-bottom: 16px;">
+          <h3>Select Run</h3>
+          <div class="body">
+            <select id="merkleRunSelect" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
+              <option value="">Select a run...</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="merkleContent" style="display:none;">
+          <div class="card" style="margin-bottom: 16px;">
+            <h3>Step Timeline</h3>
+            <div class="body">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                <input type="range" id="merkleStepSlider" min="0" max="0" value="0" style="flex:1;">
+                <span id="merkleStepLabel" style="min-width:80px;text-align:right;font-family:monospace;">Step 0</span>
+              </div>
+              <div id="merkleStepInfo" style="font-size:13px;color:var(--muted);"></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom: 16px;">
+            <h3>Tree Visualization</h3>
+            <div class="body">
+              <div id="merkleTreeViz" class="merkle-tree-container"></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom: 16px;">
+            <h3>Root Hash Evolution</h3>
+            <div class="body">
+              <div id="merkleRootEvolution" class="root-evolution"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Proof Verification</h3>
+            <div class="body">
+              <div id="merkleProofInfo" style="font-size:13px;"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="merkleEmpty" class="empty-state">
+          <p>Select a run to view its Merkle tree.</p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+      var currentView = 'runs';
+      var runsData = [];
+
+      // --- Navigation ---
+      document.querySelectorAll('.topbar nav a[data-view]').forEach(function(a) {
+        a.addEventListener('click', function(e) {
+          e.preventDefault();
+          switchView(a.dataset.view);
+        });
+      });
+
+      document.getElementById('backToRuns').addEventListener('click', function(e) {
+        e.preventDefault();
+        switchView('runs');
+      });
+
+      function switchView(name) {
+        currentView = name;
+        document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active'); });
+        document.querySelectorAll('.topbar nav a[data-view]').forEach(function(a) { a.classList.remove('active'); });
+        var el = document.getElementById(name + 'View');
+        if (el) el.classList.add('active');
+        var navEl = document.querySelector('.topbar nav a[data-view="' + name + '"]');
+        if (navEl) navEl.classList.add('active');
+        if (name === 'health') loadHealth();
+        if (name === 'runs') loadRuns();
+        if (name === 'merkle') loadMerkleRuns();
+      }
+
+      // --- Health ---
+      async function checkHealth() {
+        var dot = document.getElementById('healthDot');
+        var label = document.getElementById('healthLabel');
+        try {
+          var resp = await fetch('/health');
+          var json = await resp.json();
+          var data = json.data || json;
+          if (data.ready) {
+            dot.className = 'health-dot ok';
+            label.textContent = 'healthy';
+          } else {
+            dot.className = 'health-dot bad';
+            label.textContent = 'degraded';
+          }
+          return data;
+        } catch(e) {
+          dot.className = 'health-dot bad';
+          label.textContent = 'offline';
+          return null;
+        }
+      }
+
+      async function loadHealth() {
+        var grid = document.getElementById('healthGrid');
+        var data = await checkHealth();
+        if (!data || !data.components) {
+          grid.innerHTML = '<div class="empty-state"><p>Could not load health data.</p></div>';
+          return;
+        }
+        var html = '';
+        var comps = data.components;
+        for (var name in comps) {
+          var c = comps[name];
+          var statusColor = c.ready ? 'color:var(--ok)' : 'color:var(--bad)';
+          html += '<div class="health-card">' +
+            '<div class="comp-name">' + esc(name) + (c.required ? ' <span style="color:var(--warn);font-size:11px">(required)</span>' : '') + '</div>' +
+            '<div class="comp-status" style="' + statusColor + '">' + (c.ready ? 'Ready' : 'Not Ready') + '</div>' +
+            '<div class="comp-msg">' + esc(c.message || '') + '</div>' +
+            '</div>';
+        }
+        grid.innerHTML = html;
+      }
+
+      // --- Runs List ---
+      async function loadRuns() {
+        try {
+          var resp = await fetch('/v1/openclaw/runs');
+          var json = await resp.json();
+          var data = json.data || json;
+          runsData = data.runs || [];
+          renderRunsList();
+        } catch(e) {
+          document.getElementById('runsEmpty').innerHTML = '<p>Failed to load runs.</p>';
+        }
+      }
+
+      function renderRunsList() {
+        var statsBar = document.getElementById('statsBar');
+        var wrap = document.getElementById('runsTableWrap');
+
+        var total = runsData.length;
+        var running = runsData.filter(function(r) { return r.status === 'running'; }).length;
+        var withProof = runsData.filter(function(r) { return r.latestCid && r.latestTxHash; }).length;
+        var totalSteps = runsData.reduce(function(s, r) { return s + (r.latestStep || 0); }, 0);
+
+        statsBar.innerHTML =
+          statCard('Total Runs', total, '') +
+          statCard('Running', running, running > 0 ? 'ok' : '') +
+          statCard('With 0G Proof', withProof, withProof > 0 ? 'ok' : '') +
+          statCard('Total Steps', totalSteps, '');
+
+        if (total === 0) {
+          wrap.innerHTML = '<div class="empty-state"><p>No workflow runs found. Ingest events to get started.</p></div>';
+          return;
+        }
+
+        // Sort by updatedAt desc
+        var sorted = runsData.slice().sort(function(a, b) {
+          return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+        });
+
+        var rows = sorted.map(function(r) {
+          var statusClass = r.status === 'running' ? 'running' : r.status === 'completed' ? 'completed' : 'paused';
+          var hasProof = r.latestCid && r.latestTxHash;
+          return '<tr>' +
+            '<td><a class="clickable" href="#" data-run="' + esc(r.runId) + '">' + esc(r.runId) + '</a></td>' +
+            '<td class="mono" style="font-size:11px;color:var(--muted)">' + esc(r.workflowId) + '</td>' +
+            '<td><span class="pill ' + statusClass + '">' + esc(r.status) + '</span></td>' +
+            '<td>' + r.latestStep + '</td>' +
+            '<td>' + r.eventCount + '</td>' +
+            '<td>' + (hasProof ? '<span class="pill ok">Yes</span>' : '<span class="pill bad">No</span>') + '</td>' +
+            '<td style="font-size:12px;color:var(--muted)">' + esc(r.updatedAt || '-') + '</td>' +
+            '</tr>';
+        }).join('');
+
+        wrap.innerHTML = '<table class="runs">' +
+          '<thead><tr><th>Run ID</th><th>Workflow ID</th><th>Status</th><th>Steps</th><th>Events</th><th>0G Proof</th><th>Updated</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table>';
+
+        wrap.querySelectorAll('a.clickable[data-run]').forEach(function(a) {
+          a.addEventListener('click', function(e) {
+            e.preventDefault();
+            openRunDetail(a.dataset.run);
+          });
+        });
+      }
+
+      function statCard(label, value, cls) {
+        return '<div class="stat-card"><div class="label">' + label + '</div><div class="value ' + cls + '">' + value + '</div></div>';
+      }
+
+      // --- Run Detail ---
+      async function openRunDetail(runId) {
+        switchView('detail');
+
+        var header = document.getElementById('detailHeader');
+        var cards = document.getElementById('detailCards');
+        var timeline = document.getElementById('timeline');
+
+        header.innerHTML = '<h2>Run: ' + esc(runId) + '</h2><div class="meta-row">Loading...</div>';
+        cards.innerHTML = '';
+        timeline.innerHTML = '';
+        document.getElementById('verifyResult').innerHTML = '';
+
+        try {
+          var [ctxResp, cpResp, traceResp] = await Promise.all([
+            fetch('/v1/openclaw/runs/' + encodeURIComponent(runId) + '/context').then(r => r.json()),
+            fetch('/v1/openclaw/runs/' + encodeURIComponent(runId) + '/checkpoint/latest').then(r => r.json()),
+            fetch('/v1/openclaw/runs/' + encodeURIComponent(runId) + '/trace').then(r => r.json())
+          ]);
+
+          var ctx = ctxResp.data || ctxResp;
+          var cp = cpResp.data || cpResp;
+          var trace = traceResp.data || traceResp;
+
+          header.innerHTML = '<h2>Run: ' + esc(ctx.runId || runId) + '</h2>' +
+            '<div class="meta-row">' +
+            '<span>Workflow: ' + esc(ctx.workflowId) + '</span>' +
+            '<span>Session: ' + esc(ctx.sessionId || '-') + '</span>' +
+            '<span>Trace: ' + esc(ctx.traceId || '-') + '</span>' +
+            '<span>Status: ' + esc(ctx.status) + '</span>' +
+            '</div>';
+
+          // Checkpoint card
+          var explorerBase = 'https://chainscan-galileo.0g.ai';
+          var cpHTML = kvRow('Step', cp.latestStep) +
+            kvRow('Root Hash', cp.latestRoot, true) +
+            kvRow('CID', cp.latestCid, true);
+
+          if (cp.latestTxHash) {
+            cpHTML += '<tr><td class="key">Tx Hash</td><td class="value"><a class="proof-link" href="' + explorerBase + '/tx/' + esc(cp.latestTxHash) + '" target="_blank">' + shortHash(cp.latestTxHash) + ' &rarr;</a></td></tr>';
+          } else {
+            cpHTML += kvRow('Tx Hash', '-');
+          }
+
+          cards.innerHTML =
+            card('Checkpoint', '<table class="kv">' + cpHTML + '</table>') +
+            card('Identity', '<table class="kv">' +
+              kvRow('Run ID', ctx.runId) +
+              kvRow('Workflow ID', ctx.workflowId) +
+              kvRow('Agent ID', ctx.agentId) +
+              kvRow('Session ID', ctx.sessionId || '-') +
+              kvRow('Trace ID', ctx.traceId || '-') +
+              '</table>') +
+            card('0G Integration', '<table class="kv">' +
+              kvRow('Storage CID', cp.latestCid ? '<a class="proof-link" href="#">' + shortHash(cp.latestCid) + '</a>' : 'N/A', false, true) +
+              kvRow('Chain Anchor', cp.latestTxHash ? '<a class="proof-link" href="' + explorerBase + '/tx/' + esc(cp.latestTxHash) + '" target="_blank">' + shortHash(cp.latestTxHash) + ' &rarr;</a>' : 'N/A', false, true) +
+              kvRow('Network', 'Galileo Testnet (16602)') +
+              '</table>');
+
+          // Timeline
+          var steps = trace.steps || [];
+          if (steps.length === 0) {
+            timeline.innerHTML = '<div style="color:var(--muted);padding:12px">No events recorded.</div>';
+          } else {
+            timeline.innerHTML = steps.map(function(s) {
+              var meta = [];
+              if (s.role) meta.push('role=' + s.role);
+              if (s.skillName) meta.push('skill=' + s.skillName);
+              if (s.toolCallId) meta.push('tool=' + s.toolCallId);
+              if (s.taskId) meta.push('task=' + s.taskId);
+              return '<div class="timeline-item">' +
+                '<div class="step-header">' +
+                '<span class="step-idx">Step ' + s.stepIndex + '</span>' +
+                '<span class="event-type">' + esc(s.eventType) + '</span>' +
+                '<span class="pill running" style="font-size:10px">' + esc(s.actor) + '</span>' +
+                (meta.length > 0 ? '<span style="font-size:11px;color:var(--muted)">' + esc(meta.join(' | ')) + '</span>' : '') +
+                '</div>' +
+                '<div class="step-body mono">' + esc(truncate(s.payload, 200)) + '</div>' +
+                '</div>';
+            }).join('');
+          }
+
+          // Verify button
+          var verifyBtn = document.getElementById('detailVerifyBtn');
+          verifyBtn.onclick = function() { runVerify(runId); };
+
+        } catch(e) {
+          header.innerHTML = '<h2>Run: ' + esc(runId) + '</h2><div class="meta-row" style="color:var(--bad)">Failed to load run detail: ' + esc(e.message) + '</div>';
+        }
+      }
+
+      async function runVerify(runId) {
+        var btn = document.getElementById('detailVerifyBtn');
+        var result = document.getElementById('verifyResult');
+        btn.disabled = true;
+        btn.textContent = 'Verifying...';
+        result.innerHTML = '<div style="color:var(--muted);padding:12px">Running verification checks...</div>';
+
+        try {
+          var resp = await fetch('/v1/openclaw/runs/' + encodeURIComponent(runId) + '/verify');
+          var json = await resp.json();
+          var data = json.data || json;
+
+          var badge = data.verified ? '<span class="pill ok">VERIFIED</span>' : '<span class="pill bad">MISMATCH</span>';
+          var checksHTML = '';
+          if (Array.isArray(data.checks) && data.checks.length > 0) {
+            var rows = data.checks.map(function(c) {
+              var cls = c.passed ? 'check-pass' : 'check-fail';
+              var pillCls = c.passed ? 'ok' : 'bad';
+              var pillTxt = c.passed ? 'PASS' : 'FAIL';
+              return '<tr class="' + cls + '">' +
+                '<td>' + esc(c.name) + '</td>' +
+                '<td><span class="pill ' + pillCls + '">' + pillTxt + '</span></td>' +
+                '<td class="mono" style="font-size:11px">' + esc(c.expected || '-') + '</td>' +
+                '<td class="mono" style="font-size:11px">' + esc(c.actual || '-') + '</td>' +
+                '<td>' + esc(c.message || '') + '</td></tr>';
+            }).join('');
+            checksHTML = '<div class="checks-table-wrap"><table class="checks">' +
+              '<thead><tr><th>Check</th><th>Result</th><th>Expected</th><th>Actual</th><th>Message</th></tr></thead>' +
+              '<tbody>' + rows + '</tbody></table></div>';
+          }
+
+          // Comparison cards
+          var compGrid = '<div class="detail-grid" style="margin-top:12px">' +
+            card('Expected', miniKV(data.expected || {})) +
+            card('Recomputed', miniKV(data.recomputed || {})) +
+            card('Storage', miniKV(data.storage || {})) +
+            card('Chain', miniKV(data.chain || {})) +
+            '</div>';
+
+          result.innerHTML = '<div style="margin-top:16px">' +
+            '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' +
+            '<h3>Verification Result</h3>' + badge + '</div>' +
+            checksHTML + compGrid + '</div>';
+        } catch(e) {
+          result.innerHTML = '<div style="color:var(--bad);padding:12px">Verification failed: ' + esc(e.message) + '</div>';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Run Verification';
+        }
+      }
+
+      // --- Merkle Tree Visualization ---
+      var merkleTraceData = null;
+
+      async function loadMerkleRuns() {
+        var select = document.getElementById('merkleRunSelect');
+        try {
+          var resp = await fetch('/v1/openclaw/runs');
+          var json = await resp.json();
+          var data = json.data || json;
+          var runs = data.runs || [];
+          select.innerHTML = '<option value="">Select a run...</option>';
+          runs.forEach(function(r) {
+            var opt = document.createElement('option');
+            opt.value = r.runId;
+            opt.textContent = r.runId + ' (' + (r.status || 'unknown') + ', step ' + (r.latestStep || 0) + ')';
+            select.appendChild(opt);
+          });
+        } catch(e) {
+          select.innerHTML = '<option value="">Failed to load runs</option>';
+        }
+      }
+
+      document.getElementById('merkleRunSelect').addEventListener('change', async function(e) {
+        var runId = e.target.value;
+        if (!runId) {
+          document.getElementById('merkleContent').style.display = 'none';
+          document.getElementById('merkleEmpty').style.display = 'block';
+          return;
+        }
+        document.getElementById('merkleEmpty').style.display = 'none';
+        document.getElementById('merkleContent').style.display = 'block';
+        try {
+          var resp = await fetch('/v1/openclaw/runs/' + encodeURIComponent(runId) + '/trace');
+          var json = await resp.json();
+          merkleTraceData = json.data || json;
+          renderMerkleForTrace(runId, merkleTraceData);
+        } catch(e) {
+          document.getElementById('merkleTreeViz').innerHTML = '<div style="color:#f87171">Failed: ' + e.message + '</div>';
+        }
+      });
+
+      function renderMerkleForTrace(runId, trace) {
+        var steps = trace.steps || [];
+        var latestStep = trace.latestStep || 0;
+        var slider = document.getElementById('merkleStepSlider');
+        slider.min = 0;
+        slider.max = latestStep;
+        slider.value = latestStep;
+        slider.oninput = function() { updateMerkleView(steps, parseInt(slider.value), latestStep); };
+        document.getElementById('merkleStepLabel').textContent = 'Step ' + latestStep;
+        updateMerkleView(steps, latestStep, latestStep);
+      }
+
+      function updateMerkleView(steps, selectedStep, latestStep) {
+        var filteredSteps = steps.filter(function(s) { return s.stepIndex <= selectedStep; });
+        var stepInfo = document.getElementById('merkleStepInfo');
+        var lastEvt = filteredSteps.length > 0 ? filteredSteps[filteredSteps.length - 1] : null;
+        stepInfo.textContent = lastEvt
+          ? 'Events 0-' + (filteredSteps.length-1) + ' | Last: ' + lastEvt.eventType + ' (' + lastEvt.actor + ')'
+          : 'No events up to step ' + selectedStep;
+
+        document.getElementById('merkleStepLabel').textContent = 'Step ' + selectedStep;
+        document.getElementById('merkleTreeViz').innerHTML = buildMerkleViz(filteredSteps, selectedStep);
+        document.getElementById('merkleRootEvolution').innerHTML = buildRootEvolution(steps, selectedStep, latestStep);
+        document.getElementById('merkleProofInfo').innerHTML = buildProofInfo(filteredSteps, selectedStep);
+      }
+
+      function buildMerkleViz(steps, selectedStep) {
+        if (!steps || steps.length === 0) {
+          return '<div style="color:#9ca3af;padding:20px;text-align:center;">No events to visualize</div>';
+        }
+        var html = '<div class="merkle-tree">';
+        var leaves = steps.map(function(s, i) {
+          return { hash: h32(s.eventId || String(i)), step: s.stepIndex, type: s.eventType, idx: i };
+        });
+        var current = leaves;
+        var levels = [current];
+        while (current.length > 1) {
+          var next = [];
+          for (var i = 0; i < current.length; i += 2) {
+            if (i + 1 < current.length) {
+              next.push({ hash: hp32(current[i].hash, current[i+1].hash) });
+            } else {
+              next.push(current[i]);
+            }
+          }
+          levels.push(next);
+          current = next;
+        }
+        for (var l = levels.length - 1; l >= 0; l--) {
+          html += '<div class="merkle-level">';
+          var lvl = levels[l];
+          for (var n = 0; n < lvl.length; n++) {
+            var node = lvl[n];
+            var isLeaf = l === levels.length - 1;
+            var isRoot = l === 0;
+            var isSelected = isLeaf && node.step === selectedStep;
+            var cls = isRoot ? 'root' : (isLeaf ? 'leaf' : 'internal');
+            var label = isRoot ? 'ROOT' : (isLeaf ? 'E' + n : 'H' + n);
+            var hl = isSelected ? ' highlight' : '';
+            html += '<div class="merkle-node">' +
+              '<div class="merkle-node-box ' + cls + hl + '">' +
+              '<div style="font-weight:700;margin-bottom:2px;">' + label + '</div>' +
+              '<div style="font-size:9px;opacity:0.7;">' + (node.type || '') + '</div></div>' +
+              '<div class="merkle-node-label">' + sh(node.hash) + '</div></div>';
+          }
+          html += '</div>';
+          if (l > 0) html += '<div class="merkle-connector"></div>';
+        }
+        html += '</div>';
+        return html;
+      }
+
+      function buildRootEvolution(steps, selectedStep, latestStep) {
+        if (!steps || steps.length === 0) return '<div style="color:#9ca3af">No events</div>';
+        var html = '';
+        for (var i = 0; i <= latestStep; i++) {
+          var upto = steps.filter(function(s) { return s.stepIndex <= i; });
+          if (upto.length === 0) continue;
+          var root = merkleRoot(upto);
+          var isCur = i === selectedStep;
+          var isLat = i === latestStep;
+          html += '<div class="root-evolution-item' + (isCur ? ' current' : '') + '">' +
+            '<span class="step-badge">Step ' + i + (isLat ? ' (latest)' : '') + '</span>' +
+            '<span class="root-value">' + root + '</span></div>';
+        }
+        return html || '<div style="color:#9ca3af">No root data</div>';
+      }
+
+      function buildProofInfo(steps, selectedStep) {
+        if (!steps || steps.length === 0) return '<div style="color:#9ca3af">No events</div>';
+        var filtered = steps.filter(function(s) { return s.stepIndex <= selectedStep; });
+        var lastIdx = filtered.length - 1;
+        if (lastIdx < 0) return '<div style="color:#9ca3af">No event at step ' + selectedStep + '</div>';
+        var evt = filtered[lastIdx];
+        var root = merkleRoot(filtered);
+        var proof = merkleProof(steps.map(function(s){return s.eventId||'';}), lastIdx);
+        return '<table class="kv">' +
+          '<tr><td class="key">Event</td><td class="value">' + evt.eventType + ' step ' + evt.stepIndex + '</td></tr>' +
+          '<tr><td class="key">Leaf Index</td><td class="value">' + lastIdx + '</td></tr>' +
+          '<tr><td class="key">Root Hash</td><td class="value mono" style="word-break:break-all;font-size:11px;">' + root + '</td></tr>' +
+          '<tr><td class="key">Proof Length</td><td class="value">' + proof.length + ' nodes</td></tr>' +
+          '</table>';
+      }
+
+      // Deterministic hash helpers (32-byte output, hex string)
+      function h32(s) {
+        var h = 0x811c9dc5;
+        for (var i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = ((h * 0x01000193) >>> 0);
+        }
+        var result = '';
+        for (var j = 0; j < 8; j++) {
+          result += ((h >>> (j * 4)) & 0xf).toString(16);
+        }
+        return result;
+      }
+
+      function hp32(a, b) { return h32('01' + a + b); }
+      function sh(h) { return h ? (h.length > 12 ? h.substring(0, 6) + '...' : h) : ''; }
+
+      function merkleRoot(steps) {
+        if (!steps || steps.length === 0) return '0'.repeat(64);
+        var leaves = steps.map(function(s, i) { return h32((s.eventId||'') + '|' + i); });
+        while (leaves.length > 1) {
+          var next = [];
+          for (var i = 0; i < leaves.length; i += 2) {
+            next.push(i + 1 < leaves.length ? hp32(leaves[i], leaves[i+1]) : leaves[i]);
+          }
+          leaves = next;
+        }
+        return leaves[0];
+      }
+
+      function merkleProof(ids, idx) {
+        if (!ids || ids.length === 0 || idx >= ids.length) return [];
+        var leaves = ids.map(function(id, i) { return h32(id + '|' + i); });
+        var proof = [];
+        var i = idx;
+        while (leaves.length > 1) {
+          var sib = i % 2 === 0 ? i + 1 : i - 1;
+          if (sib < leaves.length) proof.push({ side: i % 2 === 0 ? 'R' : 'L', hash: leaves[sib] });
+          var next = [];
+          for (var j = 0; j < leaves.length; j += 2) {
+            next.push(j + 1 < leaves.length ? hp32(leaves[j], leaves[j+1]) : leaves[j]);
+          }
+          leaves = next;
+          i = Math.floor(i / 2);
+        }
+        return proof;
+      }
+
+      // --- Helpers ---
+      function esc(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+      function truncate(s, n) { s = s || ''; return s.length > n ? s.substring(0, n) + '...' : s; }
+      function shortHash(h) { h = h || ''; return h.length > 16 ? h.substring(0, 8) + '...' + h.substring(h.length - 6) : h; }
+
+      function kvRow(key, value, isMono, isRaw) {
+        var v = isRaw ? (value || '') : esc(value === undefined || value === null || value === '' ? '-' : value);
+        return '<tr><td class="key">' + esc(key) + '</td><td class="value' + (isMono ? ' mono' : '') + '">' + v + '</td></tr>';
+      }
+
+      function card(title, body) {
+        return '<div class="card"><h3>' + esc(title) + '</h3><div class="body">' + body + '</div></div>';
+      }
+
+      function miniKV(obj) {
+        var keys = Object.keys(obj);
+        if (keys.length === 0) return '<div style="color:var(--muted);font-size:13px">No data</div>';
+        return '<table class="kv">' + keys.map(function(k) {
+          return kvRow(k, obj[k], k.toLowerCase().indexOf('hash') >= 0 || k === 'cid');
+        }).join('') + '</table>';
+      }
+
+      // --- Init ---
+      checkHealth();
+      loadRuns();
+      setInterval(checkHealth, 30000);
+    })();
+    </script>
+  </body>
+</html>

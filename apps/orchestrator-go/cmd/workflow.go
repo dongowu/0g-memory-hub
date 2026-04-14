@@ -8,6 +8,7 @@ import (
 
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/config"
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/ogchain"
+	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/ogkv"
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/ogstorage"
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/openclaw"
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/workflow"
@@ -138,6 +139,40 @@ func (a workflowAnchorAdapter) CheckReadiness(ctx context.Context) error {
 	return nil
 }
 
+type workflowKVAdapter struct {
+	client *ogkv.Client
+}
+
+func (a workflowKVAdapter) PutCheckpoint(ctx context.Context, summary workflow.KVCheckpointSummary) error {
+	return a.client.PutCheckpoint(ctx, ogkv.CheckpointSummary{
+		WorkflowID: summary.WorkflowID,
+		StepIndex:  summary.StepIndex,
+		RootHash:   summary.RootHash,
+		CID:        summary.CID,
+		TxHash:     summary.TxHash,
+		Timestamp:  summary.Timestamp,
+	})
+}
+
+func (a workflowKVAdapter) GetLatestCheckpoint(ctx context.Context, workflowID string) (*workflow.KVCheckpointSummary, error) {
+	s, err := a.client.GetLatestCheckpoint(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	return &workflow.KVCheckpointSummary{
+		WorkflowID: s.WorkflowID,
+		StepIndex:  s.StepIndex,
+		RootHash:   s.RootHash,
+		CID:        s.CID,
+		TxHash:     s.TxHash,
+		Timestamp:  s.Timestamp,
+	}, nil
+}
+
+func (a workflowKVAdapter) CheckReadiness(ctx context.Context) error {
+	return a.client.CheckReadiness(ctx)
+}
+
 func wireWorkflowMVPDeps(svc *workflow.Service) io.Closer {
 	cfg := config.Load()
 	runtimeTransport := newRuntimeTransport(cfg)
@@ -159,6 +194,17 @@ func wireWorkflowMVPDeps(svc *workflow.Service) io.Closer {
 	svc.SetRuntime(runtimeClient)
 	svc.SetStorage(workflowStorageAdapter{client: storageClient})
 	svc.SetAnchor(workflowAnchorAdapter{client: chainClient})
+
+	if cfg.KVNodeURL != "" {
+		kvClient := ogkv.NewClient(ogkv.Config{
+			KVNodeURL:     cfg.KVNodeURL,
+			ZgsNodeURL:    cfg.KVZgsNodeURL,
+			BlockchainRPC: cfg.ChainRPCURL,
+			PrivateKey:    cfg.ChainPrivateKey,
+		})
+		svc.SetKVStore(workflowKVAdapter{client: kvClient})
+	}
+
 	return runtimeTransport
 }
 

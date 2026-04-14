@@ -11,6 +11,8 @@ type Config struct {
 	ChainContractAddress string
 	ChainID              string
 	RuntimeBinaryPath    string
+	KVNodeURL            string
+	KVZgsNodeURL         string
 }
 
 func Load() Config {
@@ -58,5 +60,7 @@ func Load() Config {
 		ChainContractAddress: chainContractAddress,
 		ChainID:              chainID,
 		RuntimeBinaryPath:    runtimeBinaryPath,
+		KVNodeURL:            os.Getenv("ORCH_KV_NODE_URL"),
+		KVZgsNodeURL:         os.Getenv("ORCH_KV_ZGS_NODE_URL"),
 	}
 }

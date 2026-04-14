@@ -29,6 +29,24 @@ type CheckpointAnchor interface {
 	GetLatestCheckpoint(ctx context.Context, workflowID string) (AnchorLatestCheckpoint, error)
 }
 
+// CheckpointKVStore is an optional fast-query layer for checkpoint metadata.
+// When configured, checkpoint summaries are written to the 0G KV layer for
+// millisecond-level queries without downloading full blobs from 0G Storage.
+type CheckpointKVStore interface {
+	PutCheckpoint(ctx context.Context, summary KVCheckpointSummary) error
+	GetLatestCheckpoint(ctx context.Context, workflowID string) (*KVCheckpointSummary, error)
+}
+
+// KVCheckpointSummary is the compact value stored in the KV layer.
+type KVCheckpointSummary struct {
+	WorkflowID string `json:"w"`
+	StepIndex  uint64 `json:"s"`
+	RootHash   string `json:"r"`
+	CID        string `json:"c"`
+	TxHash     string `json:"t"`
+	Timestamp  int64  `json:"ts"`
+}
+
 type ReadinessChecker interface {
 	CheckReadiness(ctx context.Context) error
 }
@@ -58,6 +76,7 @@ type Service struct {
 	runtime RuntimeAPI
 	storage CheckpointStorage
 	anchor  CheckpointAnchor
+	kvStore CheckpointKVStore
 	nowFn   func() time.Time
 
 	workflowLocksMu sync.Mutex
@@ -68,6 +87,7 @@ type workflowDependencies struct {
 	runtime RuntimeAPI
 	storage CheckpointStorage
 	anchor  CheckpointAnchor
+	kvStore CheckpointKVStore
 }
 
 type workflowLockEntry struct {
@@ -99,6 +119,12 @@ func (s *Service) SetAnchor(anchor CheckpointAnchor) {
 	s.depsMu.Lock()
 	defer s.depsMu.Unlock()
 	s.anchor = anchor
+}
+
+func (s *Service) SetKVStore(kvStore CheckpointKVStore) {
+	s.depsMu.Lock()
+	defer s.depsMu.Unlock()
+	s.kvStore = kvStore
 }
 
 func (s *Service) Start(workflowID string) (types.WorkflowMetadata, error) {
@@ -229,6 +255,22 @@ func (s *Service) stepLocked(ctx context.Context, deps workflowDependencies, wor
 			meta.LatestTxHash = anchorTxHash
 		}
 	}
+
+	if deps.kvStore != nil {
+		kvErr := deps.kvStore.PutCheckpoint(ctx, KVCheckpointSummary{
+			WorkflowID: meta.WorkflowID,
+			StepIndex:  checkpoint.LatestStep,
+			RootHash:   checkpoint.RootHash,
+			CID:        key,
+			TxHash:     meta.LatestTxHash,
+			Timestamp:  s.nowFn().Unix(),
+		})
+		// KV write failure is non-fatal — log but continue
+		if kvErr != nil {
+			_ = kvErr
+		}
+	}
+
 	meta.UpdatedAt = s.nowFn()
 
 	if err := s.store.Save(meta); err != nil {
@@ -319,6 +361,18 @@ func (s *Service) Status(workflowID string) (types.WorkflowMetadata, error) {
 	return s.store.Get(workflowID)
 }
 
+func (s *Service) ListRuns() ([]RunSummary, error) {
+	all, err := s.store.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RunSummary, 0, len(all))
+	for _, meta := range all {
+		out = append(out, buildRunSummary(meta))
+	}
+	return out, nil
+}
+
 func (s *Service) RunContext(runID string) (RunContext, error) {
 	meta, err := s.metadataForRun(runID)
 	if err != nil {
@@ -333,6 +387,18 @@ func (s *Service) LatestCheckpoint(runID string) (LatestCheckpoint, error) {
 		return LatestCheckpoint{}, err
 	}
 	return buildLatestCheckpoint(meta), nil
+}
+
+func (s *Service) KVLatestCheckpoint(ctx context.Context, runID string) (*KVCheckpointSummary, error) {
+	deps := s.dependencies()
+	if deps.kvStore == nil {
+		return nil, fmt.Errorf("0G KV store is not configured")
+	}
+	meta, err := s.metadataForRun(runID)
+	if err != nil {
+		return nil, err
+	}
+	return deps.kvStore.GetLatestCheckpoint(ctx, meta.WorkflowID)
 }
 
 func (s *Service) Hydrate(ctx context.Context, runID string) (RunContext, error) {
@@ -353,6 +419,33 @@ func (s *Service) RunTrace(runID string) (RunTrace, error) {
 		return RunTrace{}, err
 	}
 	return buildRunTrace(meta), nil
+}
+
+func (s *Service) Snapshot(runID string, stepIndex int64) (SnapshotView, error) {
+	meta, err := s.metadataForRun(runID)
+	if err != nil {
+		return SnapshotView{}, err
+	}
+
+	// Filter events up to and including the requested step
+	var filteredEvents []types.WorkflowStepEvent
+	var foundStep bool
+	for _, evt := range meta.Events {
+		if evt.StepIndex <= stepIndex {
+			filteredEvents = append(filteredEvents, evt)
+			if evt.StepIndex == stepIndex {
+				foundStep = true
+			}
+		}
+	}
+
+	if !foundStep && stepIndex < meta.LatestStep {
+		return SnapshotView{}, fmt.Errorf("step %d not found in workflow (latest step: %d)", stepIndex, meta.LatestStep)
+	}
+
+	// Build snapshot from filtered events
+	snapshot := buildSnapshotView(meta, filteredEvents, stepIndex)
+	return snapshot, nil
 }
 
 func (s *Service) VerifyRun(ctx context.Context, runID string) (VerifyRunResult, error) {
@@ -567,6 +660,7 @@ func (s *Service) Readiness(ctx context.Context) ReadinessReport {
 			"runtime": probeReadiness(ctx, deps.runtime, true),
 			"storage": probeReadiness(ctx, deps.storage, true),
 			"anchor":  probeReadiness(ctx, deps.anchor, false),
+			"kv":      probeReadiness(ctx, deps.kvStore, false),
 		},
 	}
 
@@ -592,6 +686,7 @@ func (s *Service) dependencies() workflowDependencies {
 		runtime: s.runtime,
 		storage: s.storage,
 		anchor:  s.anchor,
+		kvStore: s.kvStore,
 	}
 }
 

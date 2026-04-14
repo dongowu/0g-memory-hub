@@ -1,4 +1,5 @@
 pub mod checkpoint;
+pub mod codec;
 pub mod event_log;
 pub mod merkle;
 pub mod replay;
@@ -33,4 +34,3 @@ pub fn build_checkpoint(state: &WorkflowState) -> Checkpoint {
 pub fn resume_from_checkpoint(checkpoint: &Checkpoint) -> WorkflowState {
     checkpoint.to_state()
 }
-

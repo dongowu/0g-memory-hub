@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -79,9 +80,11 @@ func NewHandler(svc *workflow.Service) http.Handler {
 
 	h.mux.HandleFunc("/health", h.handleHealth)
 	h.mux.HandleFunc("/judge/verify", h.handleJudgeVerifyPage)
+	h.mux.HandleFunc("/dashboard", h.handleDashboardPage)
 	h.mux.HandleFunc("/v1/openclaw/ingest", h.handleOpenClawIngest)
 	h.mux.HandleFunc("/v1/openclaw/ingest/batch", h.handleOpenClawBatchIngest)
 	h.mux.HandleFunc("/v1/openclaw/runs/", h.handleOpenClawRunRoutes)
+	h.mux.HandleFunc("/v1/openclaw/runs", h.handleOpenClawRunsList)
 	h.mux.HandleFunc("/v1/workflows/", h.handleWorkflowRoutes)
 
 	return h
@@ -99,6 +102,29 @@ func (h *Handler) handleJudgeVerifyPage(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(VerifyConsolePageHTML()))
+}
+
+func (h *Handler) handleDashboardPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(DashboardPageHTML()))
+}
+
+func (h *Handler) handleOpenClawRunsList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		return
+	}
+	runs, err := h.svc.ListRuns()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +255,16 @@ func (h *Handler) handleOpenClawRunRoutes(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if len(parts) == 3 && parts[1] == "checkpoint" && parts[2] == "kv" && r.Method == http.MethodGet {
+		summary, err := h.svc.KVLatestCheckpoint(r.Context(), runID)
+		if err != nil {
+			handleWorkflowError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, summary)
+		return
+	}
+
 	if len(parts) == 2 && parts[1] == "hydrate" && r.Method == http.MethodPost {
 		contextView, err := h.svc.Hydrate(r.Context(), runID)
 		if err != nil {
@@ -256,6 +292,23 @@ func (h *Handler) handleOpenClawRunRoutes(w http.ResponseWriter, r *http.Request
 			return
 		}
 		writeJSON(w, http.StatusOK, verifyView)
+		return
+	}
+
+	// Time-travel: GET /v1/openclaw/runs/:id/snapshot/:stepIndex
+	if len(parts) == 3 && parts[1] == "snapshot" && r.Method == http.MethodGet {
+		stepIndexStr := parts[2]
+		var stepIndex int64
+		if _, err := fmt.Sscanf(stepIndexStr, "%d", &stepIndex); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_STEP_INDEX", "step index must be an integer")
+			return
+		}
+		snapshotView, err := h.svc.Snapshot(runID, stepIndex)
+		if err != nil {
+			handleWorkflowError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, snapshotView)
 		return
 	}
 
