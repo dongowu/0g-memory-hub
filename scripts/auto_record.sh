@@ -8,7 +8,7 @@
 # use macOS built-in: Control+Command+N in Terminal, or QuickTime.
 # =============================================================================
 
-set -euo pipeburst
+set -euo pipefail
 
 REPO_ROOT="/Users/dongowu/code/project/project_dev/0g-memory-hub"
 OUTPUT="$REPO_ROOT/demo.mp4"
@@ -42,14 +42,24 @@ wait_server() {
 stop_all() {
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
   pkill -f "orchestrator serve" 2>/dev/null || true
-  # Stop recording
-  [ -n "$REC_PID" ] && kill -INT "$REC_PID" 2>/dev/null || true
-  sleep 1
+  # Stop ffmpeg gracefully and wait for it to finish flushing
+  if [ -n "$REC_PID" ]; then
+    kill -INT "$REC_PID" 2>/dev/null || true
+    # Wait for ffmpeg to finish writing (max 10s)
+    for i in $(seq 1 10); do
+      if ! kill -0 "$REC_PID" 2>/dev/null; then
+        break
+      fi
+      sleep 1
+    done
+    kill -9 "$REC_PID" 2>/dev/null || true
+  fi
 }
 
 cleanup() {
   stop_all
-  if [ -f "/tmp/0g-recording.mp4" ]; then
+  sleep 1
+  if [ -f "/tmp/0g-recording.mp4" ] && [ -s "/tmp/0g-recording.mp4" ]; then
     cp /tmp/0g-recording.mp4 "$OUTPUT"
     echo "Video: $OUTPUT"
     ls -lh "$OUTPUT"
@@ -63,7 +73,7 @@ start_recording() {
   # Try ffmpeg screen capture first
   # Find screen device
   local screen_dev
-  screen_dev=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "Capture screen" | head -1 | grep -oP '^\[\K\d+')
+  screen_dev=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep -o '\[[0-9]*\] Capture screen' | head -1 | grep -o '[0-9]*')
   if [ -z "$screen_dev" ]; then
     echo "⚠️  Screen capture needs permission. Open System Preferences > Privacy > Screen Recording"
     echo "   Then run: bash scripts/auto_record.sh"
