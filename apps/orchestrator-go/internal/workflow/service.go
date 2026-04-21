@@ -198,7 +198,7 @@ func (s *Service) stepLocked(ctx context.Context, deps workflowDependencies, wor
 	if event.Role == "" && event.Actor != "" {
 		event.Role = event.Actor
 	}
-	event.StepIndex = meta.LatestStep
+	event.StepIndex = int64(len(meta.Events))
 	if event.EventID == "" {
 		event.EventID = fmt.Sprintf("%s-step-%d", workflowID, event.StepIndex)
 	}
