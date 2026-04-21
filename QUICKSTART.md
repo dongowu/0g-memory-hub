@@ -14,7 +14,7 @@ If you only need the strongest judge-facing path, do **Section 1** first.
 
 ## Prerequisites
 
-- Go **1.26.x** on `PATH`
+- Go **1.25.x** on `PATH`
 - Rust stable
 - Node.js **20 - 24** and `npm` for contract / deploy steps
 - A **funded Galileo testnet private key** for the live HTTP ingest / verify demo

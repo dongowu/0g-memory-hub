@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/config"
 	"github.com/dongowu/0g-memory-hub/apps/orchestrator-go/internal/ogchain"
@@ -80,9 +82,13 @@ var workflowStepCmd = &cobra.Command{
 
 type workflowStorageAdapter struct {
 	client ogstorage.Client
+	store  *workflow.LocalFileStorage
 }
 
 func (a workflowStorageAdapter) UploadCheckpoint(ctx context.Context, payload []byte) (string, string, error) {
+	if a.store != nil {
+		return a.store.UploadCheckpoint(ctx, payload)
+	}
 	result, err := a.client.UploadCheckpoint(ctx, payload)
 	if err != nil {
 		return "", "", err
@@ -91,10 +97,16 @@ func (a workflowStorageAdapter) UploadCheckpoint(ctx context.Context, payload []
 }
 
 func (a workflowStorageAdapter) DownloadCheckpoint(ctx context.Context, key string) ([]byte, error) {
+	if a.store != nil {
+		return a.store.DownloadCheckpoint(ctx, key)
+	}
 	return a.client.DownloadCheckpoint(ctx, key)
 }
 
 func (a workflowStorageAdapter) CheckReadiness(ctx context.Context) error {
+	if a.store != nil {
+		return a.store.CheckReadiness(ctx)
+	}
 	if checker, ok := a.client.(interface{ CheckReadiness(context.Context) error }); ok {
 		return checker.CheckReadiness(ctx)
 	}
@@ -103,9 +115,13 @@ func (a workflowStorageAdapter) CheckReadiness(ctx context.Context) error {
 
 type workflowAnchorAdapter struct {
 	client ogchain.Client
+	anchor *workflow.LocalAnchor
 }
 
 func (a workflowAnchorAdapter) AnchorCheckpoint(ctx context.Context, in workflow.AnchorInput) (string, error) {
+	if a.anchor != nil {
+		return a.anchor.AnchorCheckpoint(ctx, in)
+	}
 	result, err := a.client.AnchorCheckpoint(ctx, ogchain.AnchorInput{
 		WorkflowID: in.WorkflowID,
 		StepIndex:  in.StepIndex,
@@ -119,6 +135,9 @@ func (a workflowAnchorAdapter) AnchorCheckpoint(ctx context.Context, in workflow
 }
 
 func (a workflowAnchorAdapter) GetLatestCheckpoint(ctx context.Context, workflowID string) (workflow.AnchorLatestCheckpoint, error) {
+	if a.anchor != nil {
+		return a.anchor.GetLatestCheckpoint(ctx, workflowID)
+	}
 	result, err := a.client.GetLatestCheckpoint(ctx, workflowID)
 	if err != nil {
 		return workflow.AnchorLatestCheckpoint{}, err
@@ -133,6 +152,9 @@ func (a workflowAnchorAdapter) GetLatestCheckpoint(ctx context.Context, workflow
 }
 
 func (a workflowAnchorAdapter) CheckReadiness(ctx context.Context) error {
+	if a.anchor != nil {
+		return nil // local anchor is always ready
+	}
 	if checker, ok := a.client.(interface{ CheckReadiness(context.Context) error }); ok {
 		return checker.CheckReadiness(ctx)
 	}
@@ -177,23 +199,40 @@ func wireWorkflowMVPDeps(svc *workflow.Service) io.Closer {
 	cfg := config.Load()
 	runtimeTransport := newRuntimeTransport(cfg)
 	runtimeClient := workflow.NewRuntimeClient(runtimeTransport)
-	storageClient := ogstorage.NewSDKClient(ogstorage.SDKConfig{
-		IndexerRPCURL:    cfg.StorageRPCURL,
-		BlockchainRPCURL: cfg.ChainRPCURL,
-		PrivateKey:       cfg.ChainPrivateKey,
-		ChainID:          cfg.ChainID,
-	}, nil)
-	chainClient := ogchain.NewJSONRPCClient(
-		cfg.ChainRPCURL,
-		cfg.ChainPrivateKey,
-		cfg.ChainContractAddress,
-		cfg.ChainID,
-		nil,
-	)
+
+	// Use local file-based storage/anchor when private key is not configured
+	if cfg.ChainPrivateKey == "" {
+		localStore, err := workflow.NewLocalFileStorage(filepath.Join(cfg.DataDir, "local-storage"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not create local storage: %%v\n", err)
+		} else {
+			svc.SetStorage(workflowStorageAdapter{store: localStore})
+		}
+		localAnchor, err := workflow.NewLocalAnchor(filepath.Join(cfg.DataDir, "local-storage"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not create local anchor: %v\n", err)
+		} else {
+			svc.SetAnchor(workflowAnchorAdapter{anchor: localAnchor})
+		}
+	} else {
+		storageClient := ogstorage.NewSDKClient(ogstorage.SDKConfig{
+			IndexerRPCURL:    cfg.StorageRPCURL,
+			BlockchainRPCURL: cfg.ChainRPCURL,
+			PrivateKey:       cfg.ChainPrivateKey,
+			ChainID:          cfg.ChainID,
+		}, nil)
+		chainClient := ogchain.NewJSONRPCClient(
+			cfg.ChainRPCURL,
+			cfg.ChainPrivateKey,
+			cfg.ChainContractAddress,
+			cfg.ChainID,
+			nil,
+		)
+		svc.SetStorage(workflowStorageAdapter{client: storageClient})
+		svc.SetAnchor(workflowAnchorAdapter{client: chainClient})
+	}
 
 	svc.SetRuntime(runtimeClient)
-	svc.SetStorage(workflowStorageAdapter{client: storageClient})
-	svc.SetAnchor(workflowAnchorAdapter{client: chainClient})
 
 	if cfg.KVNodeURL != "" {
 		kvClient := ogkv.NewClient(ogkv.Config{
