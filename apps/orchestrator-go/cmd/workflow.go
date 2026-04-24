@@ -204,7 +204,7 @@ func wireWorkflowMVPDeps(svc *workflow.Service) io.Closer {
 	if cfg.ChainPrivateKey == "" {
 		localStore, err := workflow.NewLocalFileStorage(filepath.Join(cfg.DataDir, "local-storage"))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not create local storage: %%v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: could not create local storage: %v\n", err)
 		} else {
 			svc.SetStorage(workflowStorageAdapter{store: localStore})
 		}
