@@ -231,4 +231,7 @@ cd ../.. && npx hardhat test test/MemoryAnchor.js
 - `QUICKSTART.md`
 - `0G_INTEGRATION.md`
 - `docs/architecture/2026-03-21-openclaw-memory-runtime-design.md`
+- `docs/demo/3min-judge-flow.md`
+- `docs/demo/judge-checklist.md`
+- `docs/evidence/2026-03-23-0g-testnet-memory-anchor-deployment-proof.md`
 - `docs/submission/2026-03-23-hackquest-form-answers.md`
